@@ -11,8 +11,8 @@ https://testnet.gokite.ai?r=jZcxg5xh
 
 1. Clone repositori ini
    ```bash
-   https://github.com/Semutireng22/kiteai
-   cd kiteai
+   git clone https://github.com/BlacMagister/kitee
+   cd kitee
    ```
    atau unduh file `main.py` ke direktori lokal Anda.
    
