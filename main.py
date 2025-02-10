@@ -4,7 +4,7 @@ import random
 import time
 import requests
 import sys
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from colorama import init, Fore, Style
 
 # Inisialisasi Colorama
@@ -48,7 +48,8 @@ def save_interaction_log(log_data):
 
 # Fungsi untuk mendapatkan tanggal hari ini berdasarkan WIB (format YYYY-MM-DD)
 def get_today_date_wib():
-    now_wib = datetime.utcnow() + timedelta(hours=7)
+    # Menggunakan datetime.now(timezone.utc) agar timezone-aware
+    now_wib = datetime.now(timezone.utc) + timedelta(hours=7)
     return now_wib.strftime("%Y-%m-%d")
 
 # Fungsi untuk mereset interaksi harian jika hari sudah berganti (WIB)
@@ -181,7 +182,7 @@ def main():
         print(Fore.GREEN + "\n🎉 Sesi selesai! Menunggu hingga ±08:00 WIB untuk interaksi berikutnya...\n")
         
         # Menghitung waktu hingga reset harian (08:00 WIB)
-        now_wib = datetime.utcnow() + timedelta(hours=7)
+        now_wib = datetime.now(timezone.utc) + timedelta(hours=7)
         next_reset_wib = now_wib.replace(hour=8, minute=0, second=0, microsecond=0)
         if next_reset_wib <= now_wib:
             next_reset_wib += timedelta(days=1)
