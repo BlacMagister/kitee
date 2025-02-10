@@ -17,9 +17,21 @@ agents = {
     "deployment_SoFftlsf9z4fyA3QCHYkaANq": {"name": "Sherlock 🔎", "topic": "fraud_detection"}
 }
 
-# File untuk menyimpan data interaksi harian
+# Konfigurasi
+DEFAULT_DAILY_LIMIT = 20  # Batas interaksi harian untuk semua akun
 interaction_log_file = "interaction_log.json"
 random_questions_file = "random_questions.json"
+akun_file = "akun.txt"
+
+# Fungsi untuk membaca daftar wallet dari file (1 address per baris)
+def read_wallets():
+    try:
+        with open(akun_file, "r") as f:
+            wallets = [line.strip() for line in f.readlines() if line.strip()]
+        return wallets
+    except FileNotFoundError:
+        print(Fore.RED + f"⚠️ File {akun_file} tidak ditemukan! Harap buat file tersebut dengan daftar wallet.")
+        exit(1)
 
 # Fungsi untuk membaca data interaksi harian
 def read_interaction_log():
@@ -34,28 +46,30 @@ def save_interaction_log(log_data):
     with open(interaction_log_file, "w") as f:
         json.dump(log_data, f, indent=2)
 
-# Fungsi untuk mendapatkan tanggal hari ini dalam format YYYY-MM-DD (UTC)
-def get_today_date_utc():
-    now = datetime.utcnow()
-    return now.strftime("%Y-%m-%d")
+# Fungsi untuk mendapatkan tanggal hari ini berdasarkan WIB (format YYYY-MM-DD)
+def get_today_date_wib():
+    now_wib = datetime.utcnow() + timedelta(hours=7)
+    return now_wib.strftime("%Y-%m-%d")
 
-# Fungsi untuk memeriksa dan mereset interaksi harian jika hari sudah berganti (UTC)
-def check_and_reset_daily_interactions(log_data, daily_limit, wallet):
-    today_utc = get_today_date_utc()
-    if log_data.get("date") != today_utc:
-        print(Fore.YELLOW + "⚠️ Hari baru dimulai! Mereset interaksi harian untuk semua agent.")
-        log_data["date"] = today_utc
-        log_data["wallet"] = wallet
-        log_data["dailyLimit"] = daily_limit
-        log_data["interactions"] = {agent_id: 0 for agent_id in agents}
+# Fungsi untuk mereset interaksi harian jika hari sudah berganti (WIB)
+def check_and_reset_daily_interactions(log_data, wallet, wallet_index):
+    today_wib = get_today_date_wib()
+    if log_data.get(wallet, {}).get("date") != today_wib:
+        print(Fore.YELLOW + f"⚠️ Hari baru dimulai! Mereset interaksi harian untuk akun ke-{wallet_index}: {wallet}.")
+        log_data[wallet] = {
+            "index": wallet_index,  # Menyimpan nomor urut wallet
+            "date": today_wib,
+            "dailyLimit": DEFAULT_DAILY_LIMIT,
+            "interactions": {agent_id: 0 for agent_id in agents}
+        }
     return log_data
 
-# Fungsi untuk membaca pertanyaan acak dari file random_questions.json berdasarkan topik
+# Fungsi untuk membaca pertanyaan acak berdasarkan topik
 def get_random_questions_by_topic(file_path, topic, count):
     try:
         with open(file_path, "r") as f:
             questions = json.load(f)
-        return random.sample(questions[topic], count)
+        return random.sample(questions.get(topic, []), count)
     except Exception as e:
         print(Fore.RED + f"⚠️ Gagal membaca pertanyaan acak untuk topik {topic}: {e}")
         exit(1)
@@ -87,122 +101,94 @@ def report_usage(wallet, options):
     try:
         response = requests.post(url, json=payload, headers=headers)
         response.raise_for_status()
-        print(Fore.YELLOW + "✅ Data penggunaan berhasil dilaporkan!\n")
+        print(Fore.YELLOW + f"✅ Data penggunaan untuk {wallet} berhasil dilaporkan!\n")
     except Exception as e:
-        print(Fore.RED + f"⚠️ Gagal melaporkan penggunaan: {e}\n")
+        print(Fore.RED + f"⚠️ Gagal melaporkan penggunaan untuk {wallet}: {e}\n")
 
 # Fungsi utama
 def main():
-    # Judul aplikasi
-    print(Fore.CYAN + Style.BRIGHT + "🚀 Kite AI - Daily Interaction 🚀")
+    print(Fore.CYAN + "🚀 Kite AI - Multi Account Daily Interaction 🚀")
     print(Fore.CYAN + "----------------------------------------")
-    print(Fore.MAGENTA + "Channel: https://t.me/ugdairdrop")
-    print(Fore.MAGENTA + "Author: https://t.me/jodohsaya")
-    print(Fore.CYAN + "----------------------------------------\n")
-
-    # Periksa apakah file random_questions.json ada
+    
+    # Pastikan file random_questions.json ada, jika tidak buat file tersebut
     if not os.path.exists(random_questions_file):
         print(Fore.YELLOW + "⚠️ File random_questions.json tidak ditemukan. Membuat file baru...")
         try:
-            # Jalankan file rand.py menggunakan interpreter Python yang sama
             os.system(f"{sys.executable} rand.py")
             print(Fore.GREEN + "✅ File random_questions.json berhasil dibuat.")
         except Exception as e:
             print(Fore.RED + f"⚠️ Gagal menjalankan rand.py: {e}")
             exit(1)
-
-    # Baca data interaksi harian
-    interaction_log = read_interaction_log()
-
-    # Input wallet address hanya jika belum tersimpan di log
-    wallet = interaction_log.get("wallet")
-    if not wallet:
-        wallet = input(Fore.YELLOW + "🔑 Masukkan wallet address Anda: ").strip()
-        if not wallet.startswith("0x") or len(wallet) != 42:
-            print(Fore.RED + "⚠️ Wallet address tidak valid! Harap masukkan wallet address yang benar.")
-            exit(1)
-
-    # Input batas harian hanya jika belum tersimpan di log
-    daily_limit = interaction_log.get("dailyLimit", 20)
-    if "dailyLimit" not in interaction_log:
-        try:
-            daily_limit = int(input(Fore.YELLOW + "🔢 Masukkan batas interaksi harian per agent: "))
-            if daily_limit <= 0:
-                raise ValueError
-        except ValueError:
-            print(Fore.YELLOW + "⚠️ Input tidak valid! Menggunakan batas default 20.")
-            daily_limit = 20
-
-    print(Fore.BLUE + f"\n📌 Wallet address: {wallet}")
-    print(Fore.BLUE + f"📊 Batas interaksi harian per agent: {daily_limit}\n")
-
-    # Loop kontinu untuk menjaga program tetap berjalan
+    
     while True:
-        # Perbarui log interaksi dengan batas harian (UTC)
-        interaction_log = check_and_reset_daily_interactions(interaction_log, daily_limit, wallet)
-        save_interaction_log(interaction_log)
-
-        # Ambil pertanyaan acak dari file random_questions.json berdasarkan topik
-        random_questions_by_topic = {}
-        for agent_id, agent_info in agents.items():
-            topic = agent_info["topic"]
-            random_questions_by_topic[agent_id] = get_random_questions_by_topic(
-                random_questions_file, topic, daily_limit
-            )
-
-        # Loop untuk setiap agent
-        for agent_id, agent_info in agents.items():
-            agent_name = agent_info["name"]
-            topic = agent_info["topic"]
-            print(Fore.MAGENTA + f"\n🤖 Menggunakan Agent: {agent_name}")
-            print(Fore.CYAN + "----------------------------------------")
-
-            # Periksa apakah batas harian sudah tercapai
-            if interaction_log["interactions"][agent_id] >= daily_limit:
-                print(Fore.YELLOW + f"⚠️ Batas interaksi harian untuk agent {agent_name} sudah tercapai ({daily_limit}x).")
-                continue
-
-            # Hitung sisa interaksi yang diizinkan
-            remaining_interactions = daily_limit - interaction_log["interactions"][agent_id]
-
-            for i in range(remaining_interactions):
-                question = random_questions_by_topic[agent_id].pop()  # Ambil satu pertanyaan
-                print(Fore.YELLOW + f"🔄 interaksi ke-{interaction_log['interactions'][agent_id] + 1}")
-                print(Fore.CYAN + f"❓ Pertanyaan: {question}")
-
-                response = send_question_to_agent(agent_id, question)
-                print(Fore.GREEN + f"💡 Jawaban: {response.get('content', 'Tidak ada jawaban') if response else 'Tidak ada jawaban'}")
-
-                # Laporkan penggunaan
-                try:
+        wallets = read_wallets()
+        print(Fore.BLUE + f"📌 Ditemukan {len(wallets)} akun dalam {akun_file}\n")
+        
+        # Baca data interaksi harian
+        interaction_log = read_interaction_log()
+        
+        # Proses setiap akun secara berurutan
+        for index, wallet in enumerate(wallets, start=1):
+            print(Fore.MAGENTA + f"\n🔑 Memproses akun ke-{index}: {wallet}")
+            
+            # Perbarui log interaksi dengan batas harian (WIB)
+            interaction_log = check_and_reset_daily_interactions(interaction_log, wallet, index)
+            save_interaction_log(interaction_log)
+            
+            # Ambil pertanyaan acak dari file random_questions.json berdasarkan topik
+            random_questions_by_topic_dict = {}
+            for agent_id, agent_info in agents.items():
+                topic = agent_info["topic"]
+                random_questions_by_topic_dict[agent_id] = get_random_questions_by_topic(
+                    random_questions_file, topic, DEFAULT_DAILY_LIMIT
+                )
+            
+            # Proses interaksi untuk setiap agent
+            for agent_id, agent_info in agents.items():
+                agent_name = agent_info["name"]
+                print(Fore.CYAN + f"\n🤖 Menggunakan Agent: {agent_name}")
+                
+                # Periksa apakah batas harian sudah tercapai
+                if interaction_log[wallet]["interactions"][agent_id] >= DEFAULT_DAILY_LIMIT:
+                    print(Fore.YELLOW + f"⚠️ Batas interaksi harian untuk {agent_name} sudah tercapai ({DEFAULT_DAILY_LIMIT}x).")
+                    continue
+                
+                # Hitung sisa interaksi yang diizinkan
+                remaining_interactions = DEFAULT_DAILY_LIMIT - interaction_log[wallet]["interactions"][agent_id]
+                
+                for _ in range(remaining_interactions):
+                    question = random_questions_by_topic_dict[agent_id].pop()
+                    print(Fore.YELLOW + f"❓ Pertanyaan: {question}")
+                    
+                    response = send_question_to_agent(agent_id, question)
+                    response_text = response.get("content", "Tidak ada jawaban") if response else "Tidak ada jawaban"
+                    print(Fore.GREEN + f"💡 Jawaban: {response_text}")
+                    
+                    # Laporkan penggunaan
                     report_usage(wallet.lower(), {
                         "agent_id": agent_id,
                         "question": question,
-                        "response": response.get("content", "Tidak ada jawaban") if response else "Tidak ada jawaban"
+                        "response": response_text
                     })
-                except Exception as e:
-                    print(Fore.RED + f"⚠️ Gagal melaporkan penggunaan: {e}")
-
-                # Update jumlah interaksi
-                interaction_log["interactions"][agent_id] += 1
-                save_interaction_log(interaction_log)
-
-                # Tambahkan delay acak antara 5 hingga 15 detik
-                delay = random.randint(5, 10)
-                print(Fore.BLUE + f"⏳ Menunggu {delay} detik sebelum interaksi berikutnya...\n")
-                time.sleep(delay)
-
-            print(Fore.CYAN + "----------------------------------------")
-
-        print(Fore.GREEN + "\n🎉 Sesi selesai! Menunggu hingga ±00:00 UTC untuk interaksi berikutnya...\n")
-
-        # Hitung waktu hingga 00:00 UTC berikutnya
-        now = datetime.utcnow()
-        next_reset = (now.replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(days=1))
-        time_until_reset = (next_reset - now).total_seconds()
+                    
+                    # Update jumlah interaksi
+                    interaction_log[wallet]["interactions"][agent_id] += 1
+                    save_interaction_log(interaction_log)
+                    
+                    # Tambahkan delay acak antara 5 hingga 10 detik
+                    time.sleep(random.randint(5, 10))
+        
+        print(Fore.GREEN + "\n🎉 Sesi selesai! Menunggu hingga ±08:00 WIB untuk interaksi berikutnya...\n")
+        
+        # Menghitung waktu hingga reset harian (08:00 WIB)
+        now_wib = datetime.utcnow() + timedelta(hours=7)
+        next_reset_wib = now_wib.replace(hour=8, minute=0, second=0, microsecond=0)
+        if next_reset_wib <= now_wib:
+            next_reset_wib += timedelta(days=1)
+        time_until_reset = (next_reset_wib - now_wib).total_seconds()
         print(Fore.BLUE + f"⏰ Waktu hingga reset harian: {int(time_until_reset)} detik")
-
-        # Tunggu hingga 00:00 UTC berikutnya
+        
+        # Tidur hingga waktu reset
         time.sleep(time_until_reset)
 
 if __name__ == "__main__":
