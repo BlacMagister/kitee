@@ -18,7 +18,10 @@ https://testnet.gokite.ai?r=jZcxg5xh
    cd kitee
    ```
    atau unduh file `main.py` ke direktori lokal Anda.
-   
+```
+python3 -m venv kite
+source kite/bin/activate
+```
 2. Instal dependensi yang diperlukan:
     ```bash
     pip install -r requirements.txt
