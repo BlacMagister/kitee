@@ -16,12 +16,40 @@ init(autoreset=True)
 # Konfigurasi Logging
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s',
+    format='%(asctime)s - %(levelname)s - %(threadName)s - %(message)s',  # Tambahkan threadName
     handlers=[
         logging.FileHandler("kite_ai.log"),  # Log ke file
         logging.StreamHandler(sys.stdout)   # Log ke konsol
     ]
 )
+
+# Tambahkan custom level untuk sukses
+SUCCESS = 25
+logging.addLevelName(SUCCESS, "SUCCESS")
+def success(self, message, *args, **kws):
+    self.log(SUCCESS, message, *args, **kws)
+logging.Logger.success = success
+logging.getLogger().success = success
+
+
+# Warna untuk log (bisa disesuaikan)
+LOG_COLORS = {
+    "INFO": Fore.CYAN,
+    "WARNING": Fore.YELLOW,
+    "ERROR": Fore.RED,
+    "CRITICAL": Fore.RED + Style.BRIGHT,
+    "SUCCESS": Fore.GREEN
+}
+
+class ColoredFormatter(logging.Formatter):
+    def format(self, record):
+        log_color = LOG_COLORS.get(record.levelname, Fore.WHITE)
+        message = super().format(record)
+        return log_color + message + Style.RESET_ALL
+
+# Ganti formatter default dengan formatter berwarna
+for handler in logging.getLogger().handlers:
+    handler.setFormatter(ColoredFormatter('%(asctime)s - %(levelname)s - %(threadName)s - %(message)s'))
 
 # Global lock untuk mengupdate file log dengan aman
 log_lock = threading.Lock()
@@ -40,6 +68,7 @@ random_questions_file = "random_questions.json"
 akun_file = "akun.txt"
 RETRY_DELAY = 10  # Detik
 MAX_RETRIES = 3
+REPORT_USAGE_INITIAL_DELAY = 5 # Detik, delay sebelum retry report_usage pertama kali.
 
 # Fungsi untuk membaca daftar wallet dari file (1 address per baris)
 def read_wallets():
@@ -133,6 +162,17 @@ def send_question_to_agent(agent_id, question):
                 logging.warning(f"Format respons tidak sesuai dari agent {agent_id}: {data}")
                 return None
 
+        except requests.exceptions.HTTPError as e:
+            if e.response.status_code == 500:
+                 logging.error(f"Server Error (500) saat mengirim pertanyaan ke agent {agent_id} (Attempt {attempt + 1}/{MAX_RETRIES}): {e}")
+            else:
+                logging.error(f"HTTP error saat mengirim pertanyaan ke agent {agent_id} (Attempt {attempt + 1}/{MAX_RETRIES}): {e}")
+            if attempt < MAX_RETRIES - 1:
+                time.sleep(RETRY_DELAY)
+            else:
+                logging.error(f"Gagal mengirim pertanyaan ke agent {agent_id} setelah {MAX_RETRIES} percobaan.")
+                return None
+
         except requests.exceptions.RequestException as e:  # Catch all request-related errors
             logging.error(f"Error saat mengirim pertanyaan ke agent {agent_id} (Attempt {attempt + 1}/{MAX_RETRIES}): {e}")
             if attempt < MAX_RETRIES - 1:
@@ -159,9 +199,13 @@ def report_usage(wallet, options):
 
     for attempt in range(MAX_RETRIES):
         try:
+            # Tambahkan delay sebelum retry pertama
+            if attempt == 0:
+                time.sleep(REPORT_USAGE_INITIAL_DELAY)
+
             response = requests.post(url, json=payload, headers=headers, timeout=10)
             response.raise_for_status()
-            logging.info(f"Data penggunaan untuk {wallet} berhasil dilaporkan!")
+            logging.success(f"Data penggunaan untuk {wallet} berhasil dilaporkan!")
             return  # Success, exit the retry loop
 
         except requests.exceptions.HTTPError as http_err:
@@ -262,7 +306,7 @@ def main():
                 random_questions_by_topic_dict[agent_id] = get_random_questions_by_topic(random_questions_file, topic, DEFAULT_DAILY_LIMIT)
 
             # Jalankan interaksi untuk ketiga agent secara concurrent
-            with concurrent.futures.ThreadPoolExecutor(max_workers=len(agents)) as executor:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=len(agents), thread_name_prefix="AgentThread-") as executor:
                 futures = []
                 for agent_id, agent_info in agents.items():
                     # Skip agent jika tidak ada pertanyaan untuk topiknya
