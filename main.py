@@ -138,15 +138,6 @@ def report_usage(wallet, options):
 def main():
     print(Fore.CYAN + Style.BRIGHT + "🚀 Kite AI - Daily Interaction 🚀")
     
-    if not os.path.exists(random_questions_file):
-        print(Fore.YELLOW + f"⚠️ File {random_questions_file} tidak ditemukan. Membuat file baru...")
-        try:
-            os.system(f"{sys.executable} rand.py")
-            print(Fore.GREEN + f"✅ File {random_questions_file} berhasil dibuat.")
-        except Exception as e:
-            print(Fore.RED + f"⚠️ Gagal menjalankan rand.py: {e}")
-            sys.exit(1)
-    
     wallets = read_wallets()
     interaction_log = read_interaction_log()
     daily_limit = interaction_log.get("dailyLimit", 20)
@@ -157,18 +148,26 @@ def main():
         save_interaction_log(interaction_log)
         
         for agent_id, agent_info in agents.items():
+            agent_name = agent_info['name']
             if interaction_log["interactions"].get(agent_id, 0) >= daily_limit:
                 continue
             
+            print(Fore.MAGENTA + f"\n🤖 Menggunakan Agent: {agent_name}")
             questions = get_random_questions_by_topic(random_questions_file, agent_info["topic"], daily_limit)
-            for question in questions:
+            
+            for i, question in enumerate(questions, start=1):
+                interaksi_ke = interaction_log["interactions"][agent_id] + 1
+                print(Fore.YELLOW + f"🔄 Interaksi ke-{interaksi_ke} dengan {agent_name}")
+                print(Fore.CYAN + f"❓ Pertanyaan: {question}")
+                
                 response = send_question_to_agent(agent_id, question) or "Tidak ada jawaban"
-                print(Fore.GREEN + f"💡 {agent_info['name']}: {response}")
+                print(Fore.GREEN + f"💡 Jawaban: {response}")
                 report_usage(wallet, {"agent_id": agent_id, "question": question, "response": response})
+                
                 interaction_log["interactions"][agent_id] += 1
                 save_interaction_log(interaction_log)
                 time.sleep(random.randint(2, 5))
-    
+
     print(Fore.GREEN + "\n✅ Semua wallet selesai diproses!")
 
 if __name__ == "__main__":
