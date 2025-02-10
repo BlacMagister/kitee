@@ -6,14 +6,14 @@ import requests
 from datetime import datetime, timedelta, timezone
 from colorama import Fore, Style, init
 
-# Inisialisasi colorama
+# Inisialisasi colorama untuk pewarnaan terminal
 init(autoreset=True)
 
 # Definisi warna untuk log
-ORANGE = Fore.LIGHTYELLOW_EX
-GREEN  = Fore.LIGHTGREEN_EX
-RED    = Fore.LIGHTRED_EX
-BLUE   = Fore.LIGHTCYAN_EX
+ORANGE = Fore.LIGHTYELLOW_EX   # untuk wallet
+GREEN  = Fore.LIGHTGREEN_EX    # untuk sukses
+RED    = Fore.LIGHTRED_EX      # untuk error
+BLUE   = Fore.LIGHTCYAN_EX     # untuk informasi
 WHITE  = Fore.RESET
 
 # Konfigurasi agents
@@ -28,7 +28,7 @@ interaction_log_file = "interaction_log.json"
 wallet_file = "akun.txt"
 random_questions_file = "random_questions.json"
 
-# Fungsi untuk membaca daftar wallet dari file akun.txt
+# Fungsi membaca wallet dari file akun.txt
 def read_wallets():
     try:
         with open(wallet_file, "r") as f:
@@ -41,14 +41,14 @@ def read_wallets():
 def get_today_date_utc():
     return datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
-# Reset log interaksi harian (membuat log baru)
+# Membuat log interaksi baru untuk hari ini
 def reset_daily_interactions():
     return {
         "date": get_today_date_utc(),
-        "interactions": {}  # nanti setiap wallet akan ditambahkan
+        "interactions": {}  # nantinya tiap wallet akan ditambahkan
     }
 
-# Memuat log interaksi harian dari file, dan memastikan semua wallet ada di dalamnya
+# Memuat log interaksi dan memastikan semua wallet ada di dalamnya
 def load_interaction_log():
     try:
         with open(interaction_log_file, "r") as f:
@@ -59,7 +59,7 @@ def load_interaction_log():
     if log_data.get("date") != get_today_date_utc():
         log_data = reset_daily_interactions()
 
-    # Pastikan semua wallet yang ada di akun.txt terdaftar dalam log
+    # Pastikan setiap wallet dari akun.txt terdaftar dalam log
     wallets = read_wallets()
     for wallet in wallets:
         if wallet not in log_data["interactions"]:
@@ -72,14 +72,14 @@ def save_interaction_log(log_data):
     with open(interaction_log_file, "w") as f:
         json.dump(log_data, f, indent=2)
 
-# Mengambil pertanyaan acak berdasarkan topik dari file random_questions.json
+# Mengambil pertanyaan acak berdasarkan topik
 def get_random_questions_by_topic(topic, count):
     try:
         with open(random_questions_file, "r") as f:
             questions = json.load(f)
         available = questions.get(topic, [])
         if len(available) < count:
-            # Jika pertanyaan kurang, gunakan random.choices dengan pengulangan
+            # Jika pertanyaan kurang, gunakan random.choices (dengan pengulangan)
             return random.choices(available, k=count)
         return random.sample(available, count)
     except Exception as e:
@@ -99,13 +99,12 @@ def send_question_to_agent(agent_id, question):
                 # Ambil jawaban dari response
                 answer_data = response.json().get("choices", [{}])[0].get("message", "Jawaban tidak tersedia.")
                 if isinstance(answer_data, dict):
-                    # Jika formatnya dictionary, ambil nilai 'content'
                     return answer_data.get("content", "Jawaban tidak tersedia.")
                 else:
                     return answer_data
             elif response.status_code == 429:
                 print(f"{RED}⚠️ 429 Too Many Requests untuk {agent_id}! Skip pertanyaan ini...")
-                return None  # Skip pertanyaan jika 429
+                return None  # Skip jika 429
             else:
                 print(f"{RED}⚠️ Gagal (status code {response.status_code}) untuk {agent_id}")
         except requests.RequestException as e:
@@ -113,7 +112,7 @@ def send_question_to_agent(agent_id, question):
         time.sleep(2)
     return None
 
-# Melaporkan penggunaan ke server
+# Melaporkan penggunaan ke API
 def report_usage(wallet, agent_id, question, response_text):
     url = "https://quests-usage-dev.prod.zettablock.com/api/report_usage"
     # Jika response_text berupa dictionary, ambil 'content'
@@ -134,7 +133,7 @@ def report_usage(wallet, agent_id, question, response_text):
     except Exception as e:
         print(f"{RED}⚠️ Gagal melaporkan penggunaan: {e}")
 
-# Fungsi utama untuk menjalankan interaksi
+# Fungsi utama untuk memproses interaksi
 def main():
     print(f"{BLUE}🚀 Menjalankan Kite AI - Daily Interaction 🚀")
     
@@ -144,7 +143,7 @@ def main():
 
     # Proses tiap wallet secara berurutan
     for wallet_index, wallet in enumerate(wallets, start=1):
-        print(f"{ORANGE}🔄 Wallet ke-{wallet_index}: {wallet}")
+        print(f"\n{ORANGE}🔄 Wallet ke-{wallet_index}: {wallet}")
         
         # Proses setiap agent untuk wallet tersebut
         for agent_id, agent_info in agents.items():
@@ -165,7 +164,7 @@ def main():
                     break
                 question = questions.pop()
                 interaksi_ke = current_interactions + 1
-                print(f"{BLUE}🤖 Menggunakan Agent: {agent_name} | Wallet: {wallet}")
+                print(f"{BLUE}\n🤖 Menggunakan Agent: {agent_name} | Wallet: {wallet}")
                 print(f"{WHITE}❓ Interaksi ke-{interaksi_ke} | Pertanyaan: {question}")
                 
                 answer = send_question_to_agent(agent_id, question)
@@ -182,16 +181,21 @@ def main():
                 
                 time.sleep(5)  # Delay 5 detik antar pertanyaan
 
-    print(f"{GREEN}✅ Semua wallet selesai diproses!")
+    print(f"\n{GREEN}✅ Semua wallet selesai diproses!")
     
-    # Menunggu hingga jam 08:00 WIB (01:00 UTC) untuk menjalankan ulang
+    # Hitung waktu hingga jam 08:00 WIB (01:00 UTC)
     now_utc = datetime.now(timezone.utc)
     next_run = now_utc.replace(hour=1, minute=0, second=0, microsecond=0)
     if now_utc >= next_run:
         next_run += timedelta(days=1)
-    wait_seconds = (next_run - now_utc).total_seconds()
-    print(f"{BLUE}⏳ Menunggu {int(wait_seconds)} detik hingga jam 08:00 WIB untuk menjalankan ulang...")
-    time.sleep(wait_seconds)
+    wait_seconds = int((next_run - now_utc).total_seconds())
+    print(f"\n{BLUE}⏳ Menunggu {wait_seconds} detik hingga jam 08:00 WIB untuk menjalankan ulang...")
+    
+    # Countdown yang ditampilkan per detik
+    for remaining in range(wait_seconds, 0, -1):
+        print(f"\r{BLUE}⏳ Waktu tersisa: {remaining} detik", end="")
+        time.sleep(1)
+    print()  # newline setelah countdown
 
 if __name__ == "__main__":
     while True:
