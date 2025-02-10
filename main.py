@@ -28,10 +28,9 @@ interaction_log_file = "interaction_log.json"
 random_questions_file = "random_questions.json"
 akun_file = "akun.txt"
 MAX_RETRIES = 5  # Jumlah maksimum percobaan ulang untuk permintaan yang gagal (diambil dari JS)
-TIMEOUT = 30  # Timeout untuk permintaan HTTP (dalam detik) ditingkatkan jadi 30
+TIMEOUT = 10  # Timeout untuk permintaan HTTP (dalam detik) diperpendek menjadi 10 detik
 SLEEP_RANGE = (5, 10) # Rentang waktu tidur acak antara interaksi (dalam detik)
 RATE_LIMIT_DELAY = 2 # Delay awal untuk rate limiting (dalam detik)
-MAX_CONCURRENT_AGENTS = 3 #Jumlah agent yang diproses secara bersamaan per wallet
 REQUESTS_PER_MINUTE = 15 #Laju permintaan per menit (diambil dari JS)
 INTERVAL_BETWEEN_CYCLES = 15 #Interval antara siklus dalam detik(diambil dari JS)
 
