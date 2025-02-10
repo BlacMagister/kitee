@@ -4,171 +4,175 @@ import random
 import time
 import requests
 import sys
-import schedule
-from datetime import datetime, timezone, timedelta
-from colorama import init, Fore, Style
+from datetime import datetime, timedelta
 
-# Inisialisasi Colorama
-init(autoreset=True)
-
-# === KONFIGURASI PROXY (GEONODE) ===
-GEONODE_API_URL = "https://proxylist.geonode.com/api/proxy-list?limit=500&page=1&sort_by=lastChecked&sort_type=desc"
-PROXIES = []
-
-def fetch_proxies():
-    """Mengambil daftar proxy dari Geonode."""
-    global PROXIES
-    try:
-        response = requests.get(GEONODE_API_URL, timeout=5)
-        response.raise_for_status()
-        data = response.json()
-        if "data" in data:
-            PROXIES = [f"http://{proxy['ip']}:{proxy['port']}" for proxy in data["data"] if 'http' in proxy['protocols']]
-            print(Fore.GREEN + f"✅ Berhasil mengambil {len(PROXIES)} proxy dari Geonode!")
-        else:
-            PROXIES = []
-    except Exception as e:
-        print(Fore.RED + f"⚠️ Gagal mengambil proxy: {e}")
-        PROXIES = []
-
-def get_random_proxy():
-    """Mengembalikan proxy acak."""
-    if not PROXIES:
-        fetch_proxies()
-    return random.choice(PROXIES) if PROXIES else None
-
-# === KONFIGURASI AGENT & WALLET ===
+# Konfigurasi Agents
 agents = {
     "deployment_p5J9lz1Zxe7CYEoo0TZpRVay": {"name": "Professor 🧠", "topic": "ai"},
     "deployment_7sZJSiCqCNDy9bBHTEh7dwd9": {"name": "Crypto Buddy 💰", "topic": "crypto"},
     "deployment_SoFftlsf9z4fyA3QCHYkaANq": {"name": "Sherlock 🔎", "topic": "fraud_detection"}
 }
 
-wallet_file = "akun.txt"
+# File untuk menyimpan data
 interaction_log_file = "interaction_log.json"
+wallet_file = "akun.txt"
 random_questions_file = "random_questions.json"
 
+# Membaca daftar wallet dari file
 def read_wallets():
-    """Membaca daftar wallet dari file."""
     try:
         with open(wallet_file, "r") as f:
-            return [line.strip() for line in f if line.strip()]
+            return [line.strip() for line in f.readlines() if line.strip()]
     except FileNotFoundError:
-        print(Fore.RED + f"⚠️ File {wallet_file} tidak ditemukan!")
-        return []
+        print("⚠️ File akun.txt tidak ditemukan!")
+        exit(1)
 
+# Mendapatkan tanggal hari ini dalam format UTC
 def get_today_date_utc():
-    """Mengembalikan tanggal hari ini (UTC)."""
-    return datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    return datetime.utcnow().strftime("%Y-%m-%d")
 
+# Reset log interaksi harian
 def reset_daily_interactions():
-    """Reset interaksi jika sudah ganti hari."""
-    today_utc = get_today_date_utc()
     return {
-        "date": today_utc,
-        "interactions": {wallet: {agent_id: 0 for agent_id in agents} for wallet in read_wallets()}
+        "date": get_today_date_utc(),
+        "interactions": {}
     }
 
-def save_interaction_log(log_data):
-    """Menyimpan log ke file."""
-    with open(interaction_log_file, "w") as f:
-        json.dump(log_data, f, indent=2)
-
+# Memuat log interaksi harian
 def load_interaction_log():
-    """Memuat log interaksi."""
     try:
         with open(interaction_log_file, "r") as f:
             log_data = json.load(f)
-            if log_data.get("date") != get_today_date_utc():
-                return reset_daily_interactions()
-            return log_data
-    except FileNotFoundError:
-        return reset_daily_interactions()
+    except (FileNotFoundError, json.JSONDecodeError):
+        log_data = reset_daily_interactions()
 
-def get_random_questions(topic, count):
-    """Mengambil pertanyaan acak."""
+    if log_data.get("date") != get_today_date_utc():
+        log_data = reset_daily_interactions()
+
+    # Tambahkan wallet yang belum ada dalam log
+    wallets = read_wallets()
+    for wallet in wallets:
+        if wallet not in log_data["interactions"]:
+            log_data["interactions"][wallet] = {agent_id: 0 for agent_id in agents}
+
+    save_interaction_log(log_data)
+    return log_data
+
+# Menyimpan log interaksi harian
+def save_interaction_log(log_data):
+    with open(interaction_log_file, "w") as f:
+        json.dump(log_data, f, indent=2)
+
+# Mengambil pertanyaan acak berdasarkan topik
+def get_random_questions_by_topic(topic, count):
     try:
         with open(random_questions_file, "r") as f:
             questions = json.load(f)
-        return random.sample(questions.get(topic, []), min(count, len(questions.get(topic, []))))
+        return random.sample(questions.get(topic, []), count)
     except Exception as e:
-        print(Fore.RED + f"⚠️ Gagal membaca pertanyaan: {e}")
-        return []
+        print(f"⚠️ Gagal membaca pertanyaan untuk topik {topic}: {e}")
+        exit(1)
 
-def send_question(agent_id, question):
-    """Mengirim pertanyaan ke agent."""
+# Mengirim pertanyaan ke agent AI
+def send_question_to_agent(agent_id, question):
     url = f"https://{agent_id.lower().replace('_', '-')}.stag-vxzy.zettablock.com/main"
     payload = {"message": question, "stream": False}
     headers = {"Content-Type": "application/json"}
-
-    for _ in range(3):
-        proxy = get_random_proxy()
-        proxies = {"http": proxy, "https": proxy} if proxy else None
-        try:
-            response = requests.post(url, json=payload, headers=headers, proxies=proxies, timeout=5)
-            response.raise_for_status()
-            return response.json().get("choices", [{}])[0].get("message", "Tidak ada jawaban")
-        except Exception as e:
-            print(Fore.RED + f"⚠️ Gagal mengirim ke {agent_id} (proxy: {proxy}): {e}")
-            time.sleep(2)
-    return "Tidak ada jawaban"
-
-def main():
-    print(Fore.CYAN + "🚀 Menjalankan Kite AI - Daily Interaction 🚀")
     
-    wallets = read_wallets()
-    interaction_log = load_interaction_log()
-    save_interaction_log(interaction_log)
+    for attempt in range(3):  # Coba 3 kali dengan timeout 5 detik
+        try:
+            response = requests.post(url, json=payload, headers=headers, timeout=5)
+            response.raise_for_status()
+            return response.json().get("choices", [{}])[0].get("message", {})
+        except requests.exceptions.RequestException as e:
+            print(f"⚠️ Percobaan {attempt + 1}: Gagal menghubungi agent {agent_id}. Error: {e}")
+            time.sleep(5)  # Tunggu 5 detik sebelum mencoba lagi
+    
+    return None
 
-    for wallet_index, wallet in enumerate(wallets, start=1):
-        print(Fore.YELLOW + f"\n🔄 Wallet ke-{wallet_index}: {wallet}")
+# Melaporkan penggunaan ke server
+def report_usage(wallet, agent_id, question, response):
+    url = "https://quests-usage-dev.prod.zettablock.com/api/report_usage"
+    payload = {
+        "wallet_address": wallet,
+        "agent_id": agent_id,
+        "request_text": question,
+        "response_text": response or "Tidak ada jawaban",
+        "request_metadata": {}
+    }
+    headers = {"Content-Type": "application/json"}
+    
+    try:
+        response = requests.post(url, json=payload, headers=headers, timeout=5)
+        response.raise_for_status()
+        print("✅ Data penggunaan berhasil dilaporkan!\n")
+    except Exception as e:
+        print(f"⚠️ Gagal melaporkan penggunaan: {e}\n")
+
+# Fungsi utama
+def main():
+    print("\n🚀 Menjalankan Kite AI - Daily Interaction 🚀\n")
+
+    interaction_log = load_interaction_log()
+    wallets = read_wallets()
+    daily_limit = 20  # Batas interaksi per agent per hari
+
+    for idx, wallet in enumerate(wallets, start=1):
+        print(f"🔄 Wallet ke-{idx}: {wallet}")
 
         for agent_id, agent_info in agents.items():
-            agent_name = agent_info['name']
-            interaksi_ke = interaction_log["interactions"][wallet].get(agent_id, 0) + 1
+            agent_name = agent_info["name"]
+            topic = agent_info["topic"]
 
-            if interaksi_ke > 20:
-                continue  # Jika interaksi sudah mencapai batas, skip
+            print(f"🤖 Menggunakan Agent: {agent_name} | Wallet: {wallet}")
             
-            print(Fore.MAGENTA + f"\n🤖 Menggunakan Agent: {agent_name}")
-            questions = get_random_questions(agent_info["topic"], 1)  # Ambil 1 pertanyaan
+            # Cek apakah batas interaksi harian sudah tercapai
+            interaksi_ke = interaction_log["interactions"][wallet].get(agent_id, 0)
+            if interaksi_ke >= daily_limit:
+                print(f"⚠️ Batas interaksi harian untuk {agent_name} sudah tercapai ({daily_limit}x).")
+                continue
 
-            for question in questions:
-                print(Fore.YELLOW + f"🔄 Interaksi ke-{interaksi_ke} dengan {agent_name}")
-                print(Fore.CYAN + f"❓ Pertanyaan: {question}")
+            questions = get_random_questions_by_topic(topic, daily_limit)
+            for _ in range(daily_limit - interaksi_ke):
+                if not questions:
+                    print(f"⚠️ Tidak ada pertanyaan tersisa untuk {agent_name}.")
+                    break
 
-                response = send_question(agent_id, question)
-                print(Fore.GREEN + f"💡 Jawaban: {response}")
+                question = questions.pop()
+                print(f"❓ Interaksi ke-{interaksi_ke + 1} | Pertanyaan: {question}")
 
-                interaction_log["interactions"][wallet][agent_id] = interaksi_ke
+                response = send_question_to_agent(agent_id, question)
+                response_text = response.get("content", "Tidak ada jawaban") if response else "Tidak ada jawaban"
+
+                print(f"💡 Jawaban: {response_text}")
+
+                # Laporkan penggunaan
+                report_usage(wallet, agent_id, question, response_text)
+
+                # Update log
+                interaction_log["interactions"][wallet][agent_id] = interaksi_ke + 1
                 save_interaction_log(interaction_log)
 
-                time.sleep(random.randint(2, 5))  # Delay sebelum interaksi berikutnya
+                # Delay acak antara 3-7 detik
+                delay = random.randint(3, 7)
+                print(f"⏳ Menunggu {delay} detik sebelum pertanyaan berikutnya...\n")
+                time.sleep(delay)
 
-    print(Fore.GREEN + "\n✅ Semua wallet selesai diproses!")
+        print("✅ Wallet selesai diproses!\n")
 
-# === JADWAL ULANG OTOMATIS SETIAP HARI JAM 08:00 WIB ===
-def start_scheduler():
-    schedule.clear()
-    
-    def run_script():
-        print(Fore.YELLOW + "\n🔄 Menjalankan ulang script pada jam 08:00 WIB\n")
-        main()
-    
-    # Jadwal ulang setiap jam 08:00 WIB
-    wib_now = datetime.now() + timedelta(hours=7)
-    next_run = datetime.now().replace(hour=8, minute=0, second=0, microsecond=0)
-    if wib_now > next_run:
-        next_run += timedelta(days=1)
-    
-    schedule.every().day.at("08:00").do(run_script)
-    
-    print(Fore.GREEN + f"⏳ Script akan dijalankan ulang setiap jam 08:00 WIB")
-    
-    while True:
-        schedule.run_pending()
-        time.sleep(10)
+    print("✅ Semua wallet selesai diproses! Menunggu hingga jam 08:00 WIB untuk menjalankan ulang...")
 
+    # Hitung waktu hingga 08:00 WIB
+    now = datetime.utcnow()
+    next_run = now.replace(hour=1, minute=0, second=0, microsecond=0)  # 08:00 WIB = 01:00 UTC
+    if now >= next_run:
+        next_run += timedelta(days=1)  # Jika sudah lewat jam 08:00, tunggu hingga besok
+
+    time_until_next_run = (next_run - now).total_seconds()
+    print(f"⏰ Waktu hingga restart: {int(time_until_next_run)} detik")
+    time.sleep(time_until_next_run)
+
+# Jalankan script
 if __name__ == "__main__":
-    main()
-    start_scheduler()
+    while True:
+        main()
