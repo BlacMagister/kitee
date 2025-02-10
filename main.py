@@ -78,7 +78,7 @@ def get_random_questions_by_topic(file_path, topic, count):
         print(Fore.RED + f"⚠️ Gagal membaca pertanyaan acak untuk topik {topic}: {e}")
         exit(1)
 
-# Fungsi untuk mengirim pertanyaan ke agent AI dengan retry
+# Fungsi untuk mengirim pertanyaan ke agent AI dengan mekanisme retry
 def send_question_to_agent(agent_id, question, retries=3):
     url = f"https://{agent_id.lower().replace('_', '-')}.stag-vxzy.zettablock.com/main"
     payload = {"message": question, "stream": False}
@@ -106,7 +106,7 @@ def send_question_to_agent(agent_id, question, retries=3):
             print(Fore.RED + f"⚠️ Error saat mengirim pertanyaan ke agent {agent_id}: {e}")
             return None
 
-# Fungsi untuk melaporkan penggunaan dengan retry (untuk error 429 dan lainnya)
+# Fungsi untuk melaporkan penggunaan dengan mekanisme retry (misal error 429 atau error lainnya)
 def report_usage(wallet, options, retries=3):
     url = "https://quests-usage-dev.prod.zettablock.com/api/report_usage"
     payload = {
@@ -163,8 +163,6 @@ def main():
         # Proses setiap akun secara berurutan
         for index, wallet in enumerate(wallets, start=1):
             print(Fore.MAGENTA + f"\n🔑 Memproses akun ke-{index}: {wallet}")
-            
-            # Perbarui log interaksi dengan batas harian (WIB)
             interaction_log = check_and_reset_daily_interactions(interaction_log, wallet, index)
             save_interaction_log(interaction_log)
             
@@ -172,16 +170,14 @@ def main():
             random_questions_by_topic_dict = {}
             for agent_id, agent_info in agents.items():
                 topic = agent_info["topic"]
-                random_questions_by_topic_dict[agent_id] = get_random_questions_by_topic(
-                    random_questions_file, topic, DEFAULT_DAILY_LIMIT
-                )
+                random_questions_by_topic_dict[agent_id] = get_random_questions_by_topic(random_questions_file, topic, DEFAULT_DAILY_LIMIT)
             
             # Proses interaksi untuk setiap agent
             for agent_id, agent_info in agents.items():
                 agent_name = agent_info["name"]
                 print(Fore.CYAN + f"\n🤖 Menggunakan Agent: {agent_name}")
                 
-                # Periksa apakah batas harian sudah tercapai
+                # Periksa apakah batas interaksi harian sudah tercapai
                 if interaction_log[wallet]["interactions"][agent_id] >= DEFAULT_DAILY_LIMIT:
                     print(Fore.YELLOW + f"⚠️ Batas interaksi harian untuk {agent_name} sudah tercapai ({DEFAULT_DAILY_LIMIT}x).")
                     continue
@@ -198,6 +194,9 @@ def main():
                     
                     response = send_question_to_agent(agent_id, question)
                     response_text = response if response else "Tidak ada jawaban"
+                    # Jika respons berupa dictionary, ambil nilai dari key "content"
+                    if isinstance(response_text, dict):
+                        response_text = response_text.get("content", "Tidak ada jawaban")
                     print(Fore.GREEN + f"💡 Jawaban: {response_text}")
                     
                     # Laporkan penggunaan
