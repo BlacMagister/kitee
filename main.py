@@ -143,7 +143,10 @@ def send_question_to_agent(agent_id, question, retries=MAX_RETRIES):
             print(Fore.RED + f"⚠️ Timeout saat mengirim pertanyaan ke agent {agent_id}: {te}")
             if attempt < retries - 1:
                 print(Fore.YELLOW + f"Retrying... ({attempt + 1}/{retries})")
-                time.sleep(5)
+                for i in range(5, 0, -1):  # Countdown before retry
+                    print(Fore.YELLOW + f"⏳ Retrying dalam {i} detik...", end='\r')
+                    time.sleep(1)
+                print(" " * 30, end='\r')  # Clear the countdown line
             else:
                 return None  # Give up after max retries
 
@@ -291,17 +294,22 @@ def main():
         for index, wallet in enumerate(wallets, start=1):
             process_wallet(wallet, index, interaction_log)
         
+        # Countdown sebelum reset harian
         print(Fore.GREEN + "\n🎉 Sesi selesai! Menunggu hingga ±08:00 WIB untuk interaksi berikutnya...\n")
-        
-        # Hitung waktu hingga reset harian (08:00 WIB)
         now_wib = datetime.now(timezone.utc) + timedelta(hours=7)
         next_reset_wib = now_wib.replace(hour=8, minute=0, second=0, microsecond=0)
         if next_reset_wib <= now_wib:
             next_reset_wib += timedelta(days=1)
-        time_until_reset = (next_reset_wib - now_wib).total_seconds()
-        print(Fore.BLUE + f"⏰ Waktu hingga reset harian: {int(time_until_reset)} detik")
+        time_until_reset = int((next_reset_wib - now_wib).total_seconds())
+
+        print(Fore.BLUE + f"⏰ Waktu hingga reset harian: {time_until_reset} detik")
+        for i in range(time_until_reset, 0, -1):
+            print(Fore.BLUE + f"⏰ Waktu hingga reset harian: {i} detik", end='\r')
+            time.sleep(1)
+        print(" " * 50, end='\r')  # Clear the countdown line
         
-        time.sleep(time_until_reset)
+        time.sleep(1) #ensure accurate time
+        
 
 if __name__ == "__main__":
     main()
