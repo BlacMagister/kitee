@@ -31,3 +31,6 @@ source kite/bin/activate
     ```bash
     python3 main.py
     ```
+
+
+# THANK YOU @Semutireng22
