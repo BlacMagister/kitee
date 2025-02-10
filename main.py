@@ -31,7 +31,6 @@ MAX_RETRIES = 5  # Jumlah maksimum percobaan ulang untuk permintaan yang gagal (
 TIMEOUT = 30  # Timeout untuk permintaan HTTP (dalam detik) ditingkatkan jadi 30
 SLEEP_RANGE = (5, 10) # Rentang waktu tidur acak antara interaksi (dalam detik)
 RATE_LIMIT_DELAY = 2 # Delay awal untuk rate limiting (dalam detik)
-MAX_CONCURRENT_WALLETS = 5 # Jumlah wallet yang diproses secara bersamaan
 MAX_CONCURRENT_AGENTS = 3 #Jumlah agent yang diproses secara bersamaan per wallet
 REQUESTS_PER_MINUTE = 15 #Laju permintaan per menit (diambil dari JS)
 INTERVAL_BETWEEN_CYCLES = 15 #Interval antara siklus dalam detik(diambil dari JS)
@@ -204,10 +203,10 @@ def report_usage(wallet, options, retries=MAX_RETRIES):
 
     print(Fore.RED + f"⚠️ Gagal melaporkan penggunaan untuk {wallet} setelah {retries} percobaan.")
 
-# Fungsi yang memproses interaksi untuk satu agent secara concurrent
+# Fungsi yang memproses interaksi untuk satu agent
 def process_agent_interactions(agent_id, agent_info, wallet, questions, interaction_log):
     agent_name = agent_info["name"]
-    print(Fore.CYAN + f"\n🤖 Memproses Agent: {agent_name} untuk {wallet} (concurrent)")
+    print(Fore.CYAN + f"\n🤖 Memproses Agent: {agent_name} untuk {wallet}")
 
     # Periksa batas interaksi harian
     if interaction_log[wallet]["interactions"][agent_id] >= DEFAULT_DAILY_LIMIT:
@@ -248,7 +247,7 @@ def process_agent_interactions(agent_id, agent_info, wallet, questions, interact
         
         time.sleep(random.randint(*SLEEP_RANGE)) # Use SLEEP_RANGE tuple
 
-# Fungsi untuk memproses satu wallet
+# Fungsi untuk memproses satu wallet (diubah untuk sequential processing)
 def process_wallet(wallet, index, interaction_log):
     print(Fore.MAGENTA + f"\n🔑 Memproses akun ke-{index}: {wallet}")
     interaction_log = check_and_reset_daily_interactions(interaction_log, wallet, index)
@@ -260,25 +259,12 @@ def process_wallet(wallet, index, interaction_log):
         topic = agent_info["topic"]
         random_questions_by_topic_dict[agent_id] = get_random_questions_by_topic(random_questions_file, topic, DEFAULT_DAILY_LIMIT)
 
-    # Jalankan interaksi untuk ketiga agent secara concurrent
-    with concurrent.futures.ThreadPoolExecutor(max_workers=MAX_CONCURRENT_AGENTS) as executor:
-        futures = []
-        for agent_id, agent_info in agents.items():
-            #Create a copy of the question list for each thread to prevent race conditions
-            question_list_copy = random_questions_by_topic_dict[agent_id].copy()
-            futures.append(
-                executor.submit(
-                    process_agent_interactions,
-                    agent_id,
-                    agent_info,
-                    wallet,
-                    question_list_copy,
-                    interaction_log
-                )
-            )
-        # Tunggu hingga semua thread selesai
-        for future in concurrent.futures.as_completed(futures):
-            future.result()
+    # Jalankan interaksi untuk ketiga agent secara SEKUENTIAL
+    for agent_id, agent_info in agents.items():
+        question_list_copy = random_questions_by_topic_dict[agent_id].copy() # create a copy of question list
+        process_agent_interactions(agent_id, agent_info, wallet, question_list_copy, interaction_log)
+        time.sleep(INTERVAL_BETWEEN_CYCLES) # Add delay BETWEEN agents (in seconds) for more conservative processing
+
 
 # Fungsi utama
 def main():
@@ -302,22 +288,9 @@ def main():
         # Baca data interaksi harian
         interaction_log = read_interaction_log()
 
-        # Proses wallet secara concurrent dengan batasan MAX_CONCURRENT_WALLETS
-        with concurrent.futures.ThreadPoolExecutor(max_workers=MAX_CONCURRENT_WALLETS) as executor:
-            futures = []
-            for index, wallet in enumerate(wallets, start=1):
-                futures.append(
-                    executor.submit(
-                        process_wallet,
-                        wallet,
-                        index,
-                        interaction_log
-                    )
-                )
-
-            # Tunggu hingga semua wallet selesai diproses
-            for future in concurrent.futures.as_completed(futures):
-                future.result()
+        # Proses wallet secara SEQUENTIAL (satu per satu)
+        for index, wallet in enumerate(wallets, start=1):
+            process_wallet(wallet, index, interaction_log)
         
         print(Fore.GREEN + "\n🎉 Sesi selesai! Menunggu hingga ±08:00 WIB untuk interaksi berikutnya...\n")
         
