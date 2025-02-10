@@ -27,12 +27,16 @@ DEFAULT_DAILY_LIMIT = 20  # Batas interaksi harian untuk semua akun
 interaction_log_file = "interaction_log.json"
 random_questions_file = "random_questions.json"
 akun_file = "akun.txt"
-MAX_RETRIES = 3  # Jumlah maksimum percobaan ulang untuk permintaan yang gagal
-TIMEOUT = 20  # Timeout untuk permintaan HTTP (dalam detik)
+MAX_RETRIES = 5  # Jumlah maksimum percobaan ulang untuk permintaan yang gagal (diambil dari JS)
+TIMEOUT = 30  # Timeout untuk permintaan HTTP (dalam detik) ditingkatkan jadi 30
 SLEEP_RANGE = (5, 10) # Rentang waktu tidur acak antara interaksi (dalam detik)
 RATE_LIMIT_DELAY = 2 # Delay awal untuk rate limiting (dalam detik)
 MAX_CONCURRENT_WALLETS = 5 # Jumlah wallet yang diproses secara bersamaan
 MAX_CONCURRENT_AGENTS = 3 #Jumlah agent yang diproses secara bersamaan per wallet
+REQUESTS_PER_MINUTE = 15 #Laju permintaan per menit (diambil dari JS)
+INTERVAL_BETWEEN_CYCLES = 15 #Interval antara siklus dalam detik(diambil dari JS)
+
+last_request_time = 0 #Waktu permintaan terkahir(diambil dari JS)
 
 # Fungsi untuk membaca daftar wallet dari file (1 address per baris)
 def read_wallets():
@@ -95,6 +99,19 @@ def get_random_questions_by_topic(file_path, topic, count):
         print(Fore.RED + f"⚠️ Gagal membaca pertanyaan acak untuk topik {topic}: {e}")
         sys.exit(1)
 
+def check_rate_limit():
+    global last_request_time
+    now = time.time()
+    time_since_last_request = now - last_request_time
+    minimum_interval = 60 / REQUESTS_PER_MINUTE # Time in seconds
+
+    if time_since_last_request < minimum_interval:
+        wait_time = minimum_interval - time_since_last_request
+        print(Fore.YELLOW + f"⏳ Rate limit terdeteksi, menunggu {wait_time:.2f} detik...")
+        time.sleep(wait_time)
+
+    last_request_time = time.time()
+
 # Fungsi untuk mengirim pertanyaan ke agent AI dengan retry dan rate limit handling
 def send_question_to_agent(agent_id, question, retries=MAX_RETRIES):
     url = f"https://{agent_id.lower().replace('_', '-')}.stag-vxzy.zettablock.com/main"
@@ -103,6 +120,7 @@ def send_question_to_agent(agent_id, question, retries=MAX_RETRIES):
 
     for attempt in range(retries):
         try:
+            check_rate_limit() # Check rate limit before sending request
             response = requests.post(url, json=payload, headers=headers, timeout=TIMEOUT)
             response.raise_for_status()  # Raise HTTPError for bad responses (4xx or 5xx)
             data = response.json()
@@ -160,6 +178,7 @@ def report_usage(wallet, options, retries=MAX_RETRIES):
 
     for attempt in range(retries):
         try:
+            check_rate_limit() # Check rate limit before sending request
             response = requests.post(url, json=payload, headers=headers, timeout=10)
             response.raise_for_status()
             print(Fore.YELLOW + f"✅ Data penggunaan untuk {wallet} berhasil dilaporkan!\n")
