@@ -48,7 +48,6 @@ def save_interaction_log(log_data):
 
 # Fungsi untuk mendapatkan tanggal hari ini berdasarkan WIB (format YYYY-MM-DD)
 def get_today_date_wib():
-    # Menggunakan datetime.now(timezone.utc) agar timezone-aware
     now_wib = datetime.now(timezone.utc) + timedelta(hours=7)
     return now_wib.strftime("%Y-%m-%d")
 
@@ -70,7 +69,11 @@ def get_random_questions_by_topic(file_path, topic, count):
     try:
         with open(file_path, "r") as f:
             questions = json.load(f)
-        return random.sample(questions.get(topic, []), count)
+        questions_list = questions.get(topic, [])
+        if len(questions_list) < count:
+            print(Fore.YELLOW + f"⚠️ Jumlah pertanyaan untuk topik {topic} kurang dari {count}. Menggunakan semua pertanyaan yang tersedia.")
+            return questions_list.copy()
+        return random.sample(questions_list, count)
     except Exception as e:
         print(Fore.RED + f"⚠️ Gagal membaca pertanyaan acak untuk topik {topic}: {e}")
         exit(1)
@@ -81,9 +84,14 @@ def send_question_to_agent(agent_id, question):
     payload = {"message": question, "stream": False}
     headers = {"Content-Type": "application/json"}
     try:
-        response = requests.post(url, json=payload, headers=headers)
+        response = requests.post(url, json=payload, headers=headers, timeout=10)
         response.raise_for_status()
-        return response.json()["choices"][0]["message"]
+        data = response.json()
+        if "choices" in data and len(data["choices"]) > 0:
+            return data["choices"][0].get("message", None)
+        else:
+            print(Fore.RED + f"⚠️ Format respons tidak sesuai dari agent {agent_id}: {data}")
+            return None
     except Exception as e:
         print(Fore.RED + f"⚠️ Error saat mengirim pertanyaan ke agent {agent_id}: {e}")
         return None
@@ -100,7 +108,7 @@ def report_usage(wallet, options):
     }
     headers = {"Content-Type": "application/json"}
     try:
-        response = requests.post(url, json=payload, headers=headers)
+        response = requests.post(url, json=payload, headers=headers, timeout=10)
         response.raise_for_status()
         print(Fore.YELLOW + f"✅ Data penggunaan untuk {wallet} berhasil dilaporkan!\n")
     except Exception as e:
@@ -136,7 +144,7 @@ def main():
             interaction_log = check_and_reset_daily_interactions(interaction_log, wallet, index)
             save_interaction_log(interaction_log)
             
-            # Ambil pertanyaan acak dari file random_questions.json berdasarkan topik
+            # Ambil pertanyaan acak dari file random_questions.json berdasarkan topik untuk setiap agent
             random_questions_by_topic_dict = {}
             for agent_id, agent_info in agents.items():
                 topic = agent_info["topic"]
@@ -158,11 +166,14 @@ def main():
                 remaining_interactions = DEFAULT_DAILY_LIMIT - interaction_log[wallet]["interactions"][agent_id]
                 
                 for _ in range(remaining_interactions):
+                    if not random_questions_by_topic_dict[agent_id]:
+                        print(Fore.YELLOW + f"⚠️ Tidak ada pertanyaan tersisa untuk topik {agent_info['topic']}.")
+                        break
                     question = random_questions_by_topic_dict[agent_id].pop()
                     print(Fore.YELLOW + f"❓ Pertanyaan: {question}")
                     
                     response = send_question_to_agent(agent_id, question)
-                    response_text = response.get("content", "Tidak ada jawaban") if response else "Tidak ada jawaban"
+                    response_text = response if response else "Tidak ada jawaban"
                     print(Fore.GREEN + f"💡 Jawaban: {response_text}")
                     
                     # Laporkan penggunaan
