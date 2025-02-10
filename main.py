@@ -29,12 +29,12 @@ random_questions_file = "random_questions.json"
 akun_file = "akun.txt"
 MAX_RETRIES = 5  # Jumlah maksimum percobaan ulang untuk permintaan yang gagal (diambil dari JS)
 TIMEOUT = 10  # Timeout untuk permintaan HTTP (dalam detik) diperpendek menjadi 10 detik
-SLEEP_RANGE = (5, 10) # Rentang waktu tidur acak antara interaksi (dalam detik)
-RATE_LIMIT_DELAY = 2 # Delay awal untuk rate limiting (dalam detik)
-REQUESTS_PER_MINUTE = 15 #Laju permintaan per menit (diambil dari JS)
-INTERVAL_BETWEEN_CYCLES = 15 #Interval antara siklus dalam detik(diambil dari JS)
+SLEEP_RANGE = (5, 10)  # Rentang waktu tidur acak antara interaksi (dalam detik)
+RATE_LIMIT_DELAY = 2  # Delay awal untuk rate limiting (dalam detik)
+REQUESTS_PER_MINUTE = 15  # Laju permintaan per menit (diambil dari JS)
+INTERVAL_BETWEEN_CYCLES = 15  # Interval antara siklus dalam detik(diambil dari JS)
 
-last_request_time = 0 #Waktu permintaan terkahir(diambil dari JS)
+last_request_time = 0  # Waktu permintaan terkahir(diambil dari JS)
 
 # Fungsi untuk membaca daftar wallet dari file (1 address per baris)
 def read_wallets():
@@ -101,7 +101,7 @@ def check_rate_limit():
     global last_request_time
     now = time.time()
     time_since_last_request = now - last_request_time
-    minimum_interval = 60 / REQUESTS_PER_MINUTE # Time in seconds
+    minimum_interval = 60 / REQUESTS_PER_MINUTE  # Time in seconds
 
     if time_since_last_request < minimum_interval:
         wait_time = minimum_interval - time_since_last_request
@@ -118,7 +118,7 @@ def send_question_to_agent(agent_id, question, retries=MAX_RETRIES):
 
     for attempt in range(retries):
         try:
-            check_rate_limit() # Check rate limit before sending request
+            check_rate_limit()  # Check rate limit before sending request
             response = requests.post(url, json=payload, headers=headers, timeout=TIMEOUT)
             response.raise_for_status()  # Raise HTTPError for bad responses (4xx or 5xx)
             data = response.json()
@@ -142,22 +142,22 @@ def send_question_to_agent(agent_id, question, retries=MAX_RETRIES):
         except requests.exceptions.Timeout as te:
             print(Fore.RED + f"⚠️ Timeout saat mengirim pertanyaan ke agent {agent_id}: {te}")
             if attempt < retries - 1:
-                remaining_retries = retries - attempt -1 #Calculate remaining retries
+                remaining_retries = retries - attempt - 1  # Calculate remaining retries
                 print(Fore.YELLOW + f"Retrying... ({attempt + 1}/{retries})")
-                for i in range(5, 0, -1):  # Countdown before retry
+                for i in range(10, 0, -1):  # Countdown before retry (10 seconds)
                     print(Fore.YELLOW + f"⏳ Retrying dalam {i} detik (Retries tersisa: {remaining_retries})...", end='\r')
                     time.sleep(1)
                 print(" " * 80, end='\r')  # Clear the countdown line
             else:
                 return None  # Give up after max retries
 
-        except requests.exceptions.RequestException as re: #Catch broad exceptions
+        except requests.exceptions.RequestException as re:  # Catch broad exceptions
             print(Fore.RED + f"⚠️ Request error saat mengirim pertanyaan ke agent {agent_id}: {re}")
             return None
 
-        except json.JSONDecodeError as json_err: #Handle JSON decoding errors
-             print(Fore.RED + f"⚠️ JSON Decode error saat memproses response dari agent {agent_id}: {json_err}")
-             return None
+        except json.JSONDecodeError as json_err:  # Handle JSON decoding errors
+            print(Fore.RED + f"⚠️ JSON Decode error saat memproses response dari agent {agent_id}: {json_err}")
+            return None
 
         except Exception as e:
             print(Fore.RED + f"⚠️ Error tak terduga saat mengirim pertanyaan ke agent {agent_id}: {e}")
@@ -180,7 +180,7 @@ def report_usage(wallet, options, retries=MAX_RETRIES):
 
     for attempt in range(retries):
         try:
-            check_rate_limit() # Check rate limit before sending request
+            check_rate_limit()  # Check rate limit before sending request
             response = requests.post(url, json=payload, headers=headers, timeout=10)
             response.raise_for_status()
             print(Fore.YELLOW + f"✅ Data penggunaan untuk {wallet} berhasil dilaporkan!\n")
@@ -217,38 +217,38 @@ def process_agent_interactions(agent_id, agent_info, wallet, questions, interact
         return
 
     remaining_interactions = DEFAULT_DAILY_LIMIT - interaction_log[wallet]["interactions"][agent_id]
-    
+
     for _ in range(remaining_interactions):
         if not questions:
             print(Fore.YELLOW + f"⚠️ Tidak ada pertanyaan tersisa untuk topik {agent_info['topic']} untuk {wallet}.")
             break
-        
+
         question = questions.pop()
         print(Fore.YELLOW + f"❓ Pertanyaan untuk {agent_name} untuk {wallet}: {question}")
-        
+
         response = send_question_to_agent(agent_id, question)
-        
+
         if response is None:
             print(Fore.RED + f"⚠️ Tidak menerima respons dari {agent_name} untuk pertanyaan: {question} untuk {wallet}")
             continue  # Skip melaporkan penggunaan jika tidak ada respons
-            
+
         response_text = response if response else "Tidak ada jawaban"
         if isinstance(response_text, dict):
             response_text = response_text.get("content", "Tidak ada jawaban")
-        
+
         print(Fore.GREEN + f"💡 Jawaban dari {agent_name} untuk {wallet}: {response_text}")
-        
+
         report_usage(wallet.lower(), {
             "agent_id": agent_id,
             "question": question,
             "response": response_text
         })
-        
+
         with log_lock:
             interaction_log[wallet]["interactions"][agent_id] += 1
             save_interaction_log(interaction_log)
-        
-        time.sleep(random.randint(*SLEEP_RANGE)) # Use SLEEP_RANGE tuple
+
+        time.sleep(random.randint(*SLEEP_RANGE))  # Use SLEEP_RANGE tuple
 
 # Fungsi untuk memproses satu wallet (diubah untuk sequential processing)
 def process_wallet(wallet, index, interaction_log):
@@ -264,16 +264,15 @@ def process_wallet(wallet, index, interaction_log):
 
     # Jalankan interaksi untuk ketiga agent secara SEKUENTIAL
     for agent_id, agent_info in agents.items():
-        question_list_copy = random_questions_by_topic_dict[agent_id].copy() # create a copy of question list
+        question_list_copy = random_questions_by_topic_dict[agent_id].copy()  # create a copy of question list
         process_agent_interactions(agent_id, agent_info, wallet, question_list_copy, interaction_log)
-        time.sleep(INTERVAL_BETWEEN_CYCLES) # Add delay BETWEEN agents (in seconds) for more conservative processing
-
+        time.sleep(INTERVAL_BETWEEN_CYCLES)  # Add delay BETWEEN agents (in seconds) for more conservative processing
 
 # Fungsi utama
 def main():
     print(Fore.CYAN + "🚀 Kite AI - Multi Account Daily Interaction 🚀")
     print(Fore.CYAN + "----------------------------------------")
-    
+
     # Pastikan file random_questions.json ada, jika tidak buat file tersebut
     if not os.path.exists(random_questions_file):
         print(Fore.YELLOW + "⚠️ File random_questions.json tidak ditemukan. Membuat file baru...")
@@ -282,19 +281,19 @@ def main():
             print(Fore.GREEN + "✅ File random_questions.json berhasil dibuat.")
         except Exception as e:
             print(Fore.RED + f"⚠️ Gagal menjalankan rand.py: {e}")
-            sys.exit(1) #Exit sys instead of exit
-    
+            sys.exit(1)  # Exit sys instead of exit
+
     while True:
         wallets = read_wallets()
         print(Fore.BLUE + f"📌 Ditemukan {len(wallets)} akun dalam {akun_file}\n")
-        
+
         # Baca data interaksi harian
         interaction_log = read_interaction_log()
 
         # Proses wallet secara SEQUENTIAL (satu per satu)
         for index, wallet in enumerate(wallets, start=1):
             process_wallet(wallet, index, interaction_log)
-        
+
         # Countdown sebelum reset harian
         print(Fore.GREEN + "\n🎉 Sesi selesai! Menunggu hingga ±08:00 WIB untuk interaksi berikutnya...\n")
         now_wib = datetime.now(timezone.utc) + timedelta(hours=7)
@@ -308,9 +307,8 @@ def main():
             print(Fore.BLUE + f"⏰ Waktu hingga reset harian: {i} detik", end='\r')
             time.sleep(1)
         print(" " * 50, end='\r')  # Clear the countdown line
-        
-        time.sleep(1) #ensure accurate time
-        
+
+        time.sleep(1)  # ensure accurate time
 
 if __name__ == "__main__":
     main()
