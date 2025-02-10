@@ -1,7 +1,7 @@
 import json
 import random
 
-# Daftar kata kunci berdasarkan kategori dengan tambahan banyak variasi
+# Daftar kata kunci per kategori dengan variasi
 keywords = {
     "ai": [
         "AI", "machine learning", "neural networks", "deep learning", "convolutional neural networks",
@@ -42,7 +42,7 @@ keywords = {
     ]
 }
 
-# Frasa tambahan untuk variasi pertanyaan dengan pilihan yang sangat banyak
+# Frasa tambahan untuk variasi pertanyaan
 extra_phrases = [
     "in the future", "impact on economy", "challenges faced", "advantages and disadvantages", "real-world applications",
     "security concerns", "scalability issues", "role in financial markets", "integration with IoT", "comparison with traditional systems",
@@ -59,7 +59,7 @@ extra_phrases = [
     "with evolving consumer demands"
 ]
 
-# Starter untuk variasi struktur pertanyaan dengan pilihan yang sangat banyak
+# Starter untuk struktur pertanyaan
 starters = [
     "What is", "How does", "Why is", "Can you explain", "What are the benefits of", "How can", "What makes",
     "What are the features of", "How does", "What is the purpose of", "Why should we use", "What are the risks of",
@@ -71,7 +71,7 @@ starters = [
     "Outline the evolution of"
 ]
 
-# Konteks tambahan untuk variasi dengan pilihan yang sangat banyak
+# Konteks tambahan untuk variasi pertanyaan
 contexts = [
     "in today's world", "for businesses", "for individuals", "in technology", "in modern society", "in academia",
     "in the global market", "in developing countries", "in the digital revolution", "in smart cities", "across industries",
@@ -107,7 +107,6 @@ def generate_questions_per_topic(count):
 # Jumlah pertanyaan yang ingin dihasilkan per topik
 question_count_per_topic = 500
 
-# Hasilkan pertanyaan dan simpan ke file JSON
 if __name__ == "__main__":
     questions_by_topic = generate_questions_per_topic(question_count_per_topic)
     with open("random_questions.json", "w") as f:
