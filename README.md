@@ -12,6 +12,12 @@ Pastikan Anda memiliki Python 3.x terinstal di sistem Anda. Anda juga perlu meng
 Sebelum menggunakan script ini pastikan kalian daftar dulu dengan link berikut sebagai bentuk dukungan kepada author:
 https://testnet.gokite.ai?r=jZcxg5xh
 
+##1 Address per baris
+```
+nano akun.txt
+```
+
+
 1. Clone repositori ini
    ```bash
    git clone https://github.com/BlacMagister/kitee
