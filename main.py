@@ -69,6 +69,7 @@ akun_file = "akun.txt"
 RETRY_DELAY = 10  # Detik
 MAX_RETRIES = 3
 REPORT_USAGE_INITIAL_DELAY = 5 # Detik, delay sebelum retry report_usage pertama kali.
+REQUEST_TIMEOUT = 20 # Timeout untuk request ke agent
 
 # Fungsi untuk membaca daftar wallet dari file (1 address per baris)
 def read_wallets():
@@ -152,7 +153,7 @@ def send_question_to_agent(agent_id, question):
 
     for attempt in range(MAX_RETRIES):
         try:
-            response = requests.post(url, json=payload, headers=headers, timeout=20)
+            response = requests.post(url, json=payload, headers=headers, timeout=REQUEST_TIMEOUT)
             response.raise_for_status()  # Raise HTTPError for bad responses (4xx or 5xx)
             data = response.json()
 
@@ -186,7 +187,7 @@ def send_question_to_agent(agent_id, question):
 
 
 # Fungsi untuk melaporkan penggunaan dengan retry
-def report_usage(wallet, options):
+def report_usage(wallet, options, agent_name): # tambahkan agent name
     url = "https://quests-usage-dev.prod.zettablock.com/api/report_usage"
     payload = {
         "wallet_address": wallet,
@@ -205,28 +206,28 @@ def report_usage(wallet, options):
 
             response = requests.post(url, json=payload, headers=headers, timeout=10)
             response.raise_for_status()
-            logging.success(f"Data penggunaan untuk {wallet} berhasil dilaporkan!")
+            logging.success(f"Data penggunaan untuk {wallet} ({agent_name}) berhasil dilaporkan!") #tambahkan agent name
             return  # Success, exit the retry loop
 
         except requests.exceptions.HTTPError as http_err:
             status = http_err.response.status_code if http_err.response else None
             if status == 429:
                 delay = 2 ** attempt  # Exponential backoff
-                logging.warning(f"Rate limit terdeteksi, retrying dalam {delay} detik... ({attempt + 1}/{MAX_RETRIES})")
+                logging.warning(f"Rate limit terdeteksi saat melaporkan penggunaan untuk {wallet} ({agent_name}), retrying dalam {delay} detik... ({attempt + 1}/{MAX_RETRIES})") #tambahkan agent name
                 time.sleep(delay)
             else:
-                logging.error(f"Gagal melaporkan penggunaan untuk {wallet}: {http_err}")
+                logging.error(f"Gagal melaporkan penggunaan untuk {wallet} ({agent_name}): {http_err}") #tambahkan agent name
                 return
 
         except requests.exceptions.RequestException as e:
-            logging.error(f"Gagal melaporkan penggunaan untuk {wallet} (Attempt {attempt + 1}/{MAX_RETRIES}): {e}")
+            logging.error(f"Gagal melaporkan penggunaan untuk {wallet} ({agent_name}) (Attempt {attempt + 1}/{MAX_RETRIES}): {e}") #tambahkan agent name
             if attempt < MAX_RETRIES - 1:
                 time.sleep(RETRY_DELAY)
             else:
-                logging.error(f"Gagal melaporkan penggunaan untuk {wallet} setelah {MAX_RETRIES} percobaan.")
+                logging.error(f"Gagal melaporkan penggunaan untuk {wallet} ({agent_name}) setelah {MAX_RETRIES} percobaan.") #tambahkan agent name
                 return
         except Exception as e:
-            logging.error(f"Gagal melaporkan penggunaan untuk {wallet}: {e}")
+            logging.error(f"Gagal melaporkan penggunaan untuk {wallet} ({agent_name}): {e}") #tambahkan agent name
             return
 
 # Fungsi yang memproses interaksi untuk satu agent secara concurrent
@@ -257,13 +258,12 @@ def process_agent_interactions(agent_id, agent_info, wallet, questions, interact
         if isinstance(response_text, dict):
             response_text = response_text.get("content", "Tidak ada jawaban")
 
-        logging.info(f"Jawaban dari {agent_name} untuk wallet {wallet}: {response_text}")
-
+        #panggil report usage dengan agent name
         report_usage(wallet.lower(), {
             "agent_id": agent_id,
             "question": question,
             "response": response_text
-        })
+        }, agent_name)
 
         with log_lock:
             interaction_log[wallet]["interactions"][agent_id] += 1
