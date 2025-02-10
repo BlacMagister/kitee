@@ -78,26 +78,36 @@ def get_random_questions_by_topic(file_path, topic, count):
         print(Fore.RED + f"⚠️ Gagal membaca pertanyaan acak untuk topik {topic}: {e}")
         exit(1)
 
-# Fungsi untuk mengirim pertanyaan ke agent AI
-def send_question_to_agent(agent_id, question):
+# Fungsi untuk mengirim pertanyaan ke agent AI dengan retry
+def send_question_to_agent(agent_id, question, retries=3):
     url = f"https://{agent_id.lower().replace('_', '-')}.stag-vxzy.zettablock.com/main"
     payload = {"message": question, "stream": False}
     headers = {"Content-Type": "application/json"}
-    try:
-        response = requests.post(url, json=payload, headers=headers, timeout=10)
-        response.raise_for_status()
-        data = response.json()
-        if "choices" in data and len(data["choices"]) > 0:
-            return data["choices"][0].get("message", None)
-        else:
-            print(Fore.RED + f"⚠️ Format respons tidak sesuai dari agent {agent_id}: {data}")
+    attempt = 0
+    while attempt < retries:
+        try:
+            response = requests.post(url, json=payload, headers=headers, timeout=20)
+            response.raise_for_status()
+            data = response.json()
+            if "choices" in data and len(data["choices"]) > 0:
+                return data["choices"][0].get("message", None)
+            else:
+                print(Fore.RED + f"⚠️ Format respons tidak sesuai dari agent {agent_id}: {data}")
+                return None
+        except requests.exceptions.Timeout as te:
+            attempt += 1
+            print(Fore.RED + f"⚠️ Timeout saat mengirim pertanyaan ke agent {agent_id}: {te}")
+            if attempt < retries:
+                print(Fore.YELLOW + f"Retrying... ({attempt}/{retries})")
+                time.sleep(5)  # delay sebelum retry
+            else:
+                return None
+        except Exception as e:
+            print(Fore.RED + f"⚠️ Error saat mengirim pertanyaan ke agent {agent_id}: {e}")
             return None
-    except Exception as e:
-        print(Fore.RED + f"⚠️ Error saat mengirim pertanyaan ke agent {agent_id}: {e}")
-        return None
 
-# Fungsi untuk melaporkan penggunaan
-def report_usage(wallet, options):
+# Fungsi untuk melaporkan penggunaan dengan retry (untuk error 429 dan lainnya)
+def report_usage(wallet, options, retries=3):
     url = "https://quests-usage-dev.prod.zettablock.com/api/report_usage"
     payload = {
         "wallet_address": wallet,
@@ -107,12 +117,26 @@ def report_usage(wallet, options):
         "request_metadata": {}
     }
     headers = {"Content-Type": "application/json"}
-    try:
-        response = requests.post(url, json=payload, headers=headers, timeout=10)
-        response.raise_for_status()
-        print(Fore.YELLOW + f"✅ Data penggunaan untuk {wallet} berhasil dilaporkan!\n")
-    except Exception as e:
-        print(Fore.RED + f"⚠️ Gagal melaporkan penggunaan untuk {wallet}: {e}\n")
+    attempt = 0
+    while attempt < retries:
+        try:
+            response = requests.post(url, json=payload, headers=headers, timeout=10)
+            response.raise_for_status()
+            print(Fore.YELLOW + f"✅ Data penggunaan untuk {wallet} berhasil dilaporkan!\n")
+            return
+        except requests.exceptions.HTTPError as http_err:
+            status = http_err.response.status_code if http_err.response else None
+            if status == 429:
+                attempt += 1
+                delay = 2 ** attempt  # exponential backoff
+                print(Fore.YELLOW + f"⏳ Rate limit terdeteksi, retrying dalam {delay} detik... ({attempt}/{retries})")
+                time.sleep(delay)
+            else:
+                print(Fore.RED + f"⚠️ Gagal melaporkan penggunaan untuk {wallet}: {http_err}\n")
+                return
+        except Exception as e:
+            print(Fore.RED + f"⚠️ Gagal melaporkan penggunaan untuk {wallet}: {e}\n")
+            return
 
 # Fungsi utama
 def main():
