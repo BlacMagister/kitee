@@ -6,9 +6,14 @@ import requests
 import sys
 from datetime import datetime, timedelta, timezone
 from colorama import init, Fore, Style
+import concurrent.futures
+import threading
 
 # Inisialisasi Colorama
 init(autoreset=True)
+
+# Global lock untuk mengupdate file log dengan aman
+log_lock = threading.Lock()
 
 # Konfigurasi agents dengan topik spesifik
 agents = {
@@ -78,7 +83,7 @@ def get_random_questions_by_topic(file_path, topic, count):
         print(Fore.RED + f"⚠️ Gagal membaca pertanyaan acak untuk topik {topic}: {e}")
         exit(1)
 
-# Fungsi untuk mengirim pertanyaan ke agent AI dengan mekanisme retry
+# Fungsi untuk mengirim pertanyaan ke agent AI dengan retry
 def send_question_to_agent(agent_id, question, retries=3):
     url = f"https://{agent_id.lower().replace('_', '-')}.stag-vxzy.zettablock.com/main"
     payload = {"message": question, "stream": False}
@@ -99,14 +104,14 @@ def send_question_to_agent(agent_id, question, retries=3):
             print(Fore.RED + f"⚠️ Timeout saat mengirim pertanyaan ke agent {agent_id}: {te}")
             if attempt < retries:
                 print(Fore.YELLOW + f"Retrying... ({attempt}/{retries})")
-                time.sleep(5)  # delay sebelum retry
+                time.sleep(5)
             else:
                 return None
         except Exception as e:
             print(Fore.RED + f"⚠️ Error saat mengirim pertanyaan ke agent {agent_id}: {e}")
             return None
 
-# Fungsi untuk melaporkan penggunaan dengan mekanisme retry (misal error 429 atau error lainnya)
+# Fungsi untuk melaporkan penggunaan dengan retry
 def report_usage(wallet, options, retries=3):
     url = "https://quests-usage-dev.prod.zettablock.com/api/report_usage"
     payload = {
@@ -128,7 +133,7 @@ def report_usage(wallet, options, retries=3):
             status = http_err.response.status_code if http_err.response else None
             if status == 429:
                 attempt += 1
-                delay = 2 ** attempt  # exponential backoff
+                delay = 2 ** attempt
                 print(Fore.YELLOW + f"⏳ Rate limit terdeteksi, retrying dalam {delay} detik... ({attempt}/{retries})")
                 time.sleep(delay)
             else:
@@ -137,6 +142,36 @@ def report_usage(wallet, options, retries=3):
         except Exception as e:
             print(Fore.RED + f"⚠️ Gagal melaporkan penggunaan untuk {wallet}: {e}\n")
             return
+
+# Fungsi yang memproses interaksi untuk satu agent secara concurrent
+def process_agent_interactions(agent_id, agent_info, wallet, questions, interaction_log):
+    agent_name = agent_info["name"]
+    print(Fore.CYAN + f"\n🤖 Menggunakan Agent: {agent_name} (concurrent)")
+    # Periksa batas interaksi harian
+    if interaction_log[wallet]["interactions"][agent_id] >= DEFAULT_DAILY_LIMIT:
+        print(Fore.YELLOW + f"⚠️ Batas interaksi harian untuk {agent_name} sudah tercapai ({DEFAULT_DAILY_LIMIT}x).")
+        return
+    remaining_interactions = DEFAULT_DAILY_LIMIT - interaction_log[wallet]["interactions"][agent_id]
+    for _ in range(remaining_interactions):
+        if not questions:
+            print(Fore.YELLOW + f"⚠️ Tidak ada pertanyaan tersisa untuk topik {agent_info['topic']}.")
+            break
+        question = questions.pop()
+        print(Fore.YELLOW + f"❓ Pertanyaan untuk {agent_name}: {question}")
+        response = send_question_to_agent(agent_id, question)
+        response_text = response if response else "Tidak ada jawaban"
+        if isinstance(response_text, dict):
+            response_text = response_text.get("content", "Tidak ada jawaban")
+        print(Fore.GREEN + f"💡 Jawaban dari {agent_name}: {response_text}")
+        report_usage(wallet.lower(), {
+            "agent_id": agent_id,
+            "question": question,
+            "response": response_text
+        })
+        with log_lock:
+            interaction_log[wallet]["interactions"][agent_id] += 1
+            save_interaction_log(interaction_log)
+        time.sleep(random.randint(5, 10))
 
 # Fungsi utama
 def main():
@@ -166,56 +201,33 @@ def main():
             interaction_log = check_and_reset_daily_interactions(interaction_log, wallet, index)
             save_interaction_log(interaction_log)
             
-            # Ambil pertanyaan acak dari file random_questions.json berdasarkan topik untuk setiap agent
+            # Ambil pertanyaan acak dari file random_questions.json per topik untuk masing-masing agent
             random_questions_by_topic_dict = {}
             for agent_id, agent_info in agents.items():
                 topic = agent_info["topic"]
                 random_questions_by_topic_dict[agent_id] = get_random_questions_by_topic(random_questions_file, topic, DEFAULT_DAILY_LIMIT)
             
-            # Proses interaksi untuk setiap agent
-            for agent_id, agent_info in agents.items():
-                agent_name = agent_info["name"]
-                print(Fore.CYAN + f"\n🤖 Menggunakan Agent: {agent_name}")
-                
-                # Periksa apakah batas interaksi harian sudah tercapai
-                if interaction_log[wallet]["interactions"][agent_id] >= DEFAULT_DAILY_LIMIT:
-                    print(Fore.YELLOW + f"⚠️ Batas interaksi harian untuk {agent_name} sudah tercapai ({DEFAULT_DAILY_LIMIT}x).")
-                    continue
-                
-                # Hitung sisa interaksi yang diizinkan
-                remaining_interactions = DEFAULT_DAILY_LIMIT - interaction_log[wallet]["interactions"][agent_id]
-                
-                for _ in range(remaining_interactions):
-                    if not random_questions_by_topic_dict[agent_id]:
-                        print(Fore.YELLOW + f"⚠️ Tidak ada pertanyaan tersisa untuk topik {agent_info['topic']}.")
-                        break
-                    question = random_questions_by_topic_dict[agent_id].pop()
-                    print(Fore.YELLOW + f"❓ Pertanyaan: {question}")
-                    
-                    response = send_question_to_agent(agent_id, question)
-                    response_text = response if response else "Tidak ada jawaban"
-                    # Jika respons berupa dictionary, ambil nilai dari key "content"
-                    if isinstance(response_text, dict):
-                        response_text = response_text.get("content", "Tidak ada jawaban")
-                    print(Fore.GREEN + f"💡 Jawaban: {response_text}")
-                    
-                    # Laporkan penggunaan
-                    report_usage(wallet.lower(), {
-                        "agent_id": agent_id,
-                        "question": question,
-                        "response": response_text
-                    })
-                    
-                    # Update jumlah interaksi
-                    interaction_log[wallet]["interactions"][agent_id] += 1
-                    save_interaction_log(interaction_log)
-                    
-                    # Tambahkan delay acak antara 5 hingga 10 detik
-                    time.sleep(random.randint(5, 10))
+            # Jalankan interaksi untuk ketiga agent secara concurrent
+            with concurrent.futures.ThreadPoolExecutor(max_workers=len(agents)) as executor:
+                futures = []
+                for agent_id, agent_info in agents.items():
+                    futures.append(
+                        executor.submit(
+                            process_agent_interactions,
+                            agent_id,
+                            agent_info,
+                            wallet,
+                            random_questions_by_topic_dict[agent_id],
+                            interaction_log
+                        )
+                    )
+                # Tunggu hingga semua thread selesai
+                for future in concurrent.futures.as_completed(futures):
+                    future.result()
         
         print(Fore.GREEN + "\n🎉 Sesi selesai! Menunggu hingga ±08:00 WIB untuk interaksi berikutnya...\n")
         
-        # Menghitung waktu hingga reset harian (08:00 WIB)
+        # Hitung waktu hingga reset harian (08:00 WIB)
         now_wib = datetime.now(timezone.utc) + timedelta(hours=7)
         next_reset_wib = now_wib.replace(hour=8, minute=0, second=0, microsecond=0)
         if next_reset_wib <= now_wib:
@@ -223,7 +235,6 @@ def main():
         time_until_reset = (next_reset_wib - now_wib).total_seconds()
         print(Fore.BLUE + f"⏰ Waktu hingga reset harian: {int(time_until_reset)} detik")
         
-        # Tidur hingga waktu reset
         time.sleep(time_until_reset)
 
 if __name__ == "__main__":
