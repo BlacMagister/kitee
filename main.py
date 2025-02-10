@@ -142,11 +142,12 @@ def send_question_to_agent(agent_id, question, retries=MAX_RETRIES):
         except requests.exceptions.Timeout as te:
             print(Fore.RED + f"⚠️ Timeout saat mengirim pertanyaan ke agent {agent_id}: {te}")
             if attempt < retries - 1:
+                remaining_retries = retries - attempt -1 #Calculate remaining retries
                 print(Fore.YELLOW + f"Retrying... ({attempt + 1}/{retries})")
                 for i in range(5, 0, -1):  # Countdown before retry
-                    print(Fore.YELLOW + f"⏳ Retrying dalam {i} detik...", end='\r')
+                    print(Fore.YELLOW + f"⏳ Retrying dalam {i} detik (Retries tersisa: {remaining_retries})...", end='\r')
                     time.sleep(1)
-                print(" " * 30, end='\r')  # Clear the countdown line
+                print(" " * 80, end='\r')  # Clear the countdown line
             else:
                 return None  # Give up after max retries
 
