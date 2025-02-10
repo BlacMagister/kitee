@@ -27,6 +27,10 @@ DEFAULT_DAILY_LIMIT = 20  # Batas interaksi harian untuk semua akun
 interaction_log_file = "interaction_log.json"
 random_questions_file = "random_questions.json"
 akun_file = "akun.txt"
+MAX_RETRIES = 3  # Jumlah maksimum percobaan ulang untuk permintaan yang gagal
+TIMEOUT = 20  # Timeout untuk permintaan HTTP (dalam detik)
+SLEEP_RANGE = (5, 10) # Rentang waktu tidur acak antara interaksi (dalam detik)
+RATE_LIMIT_DELAY = 2 # Delay awal untuk rate limiting (dalam detik)
 
 # Fungsi untuk membaca daftar wallet dari file (1 address per baris)
 def read_wallets():
@@ -36,7 +40,7 @@ def read_wallets():
         return wallets
     except FileNotFoundError:
         print(Fore.RED + f"⚠️ File {akun_file} tidak ditemukan! Harap buat file tersebut dengan daftar wallet.")
-        exit(1)
+        sys.exit(1)
 
 # Fungsi untuk membaca data interaksi harian
 def read_interaction_log():
@@ -79,40 +83,69 @@ def get_random_questions_by_topic(file_path, topic, count):
             print(Fore.YELLOW + f"⚠️ Jumlah pertanyaan untuk topik {topic} kurang dari {count}. Menggunakan semua pertanyaan yang tersedia.")
             return questions_list.copy()
         return random.sample(questions_list, count)
+    except FileNotFoundError:
+        print(Fore.RED + f"⚠️ File {file_path} tidak ditemukan!")
+        sys.exit(1)
+    except json.JSONDecodeError:
+        print(Fore.RED + f"⚠️ File {file_path} rusak. Pastikan ini adalah file JSON yang valid.")
+        sys.exit(1)
     except Exception as e:
         print(Fore.RED + f"⚠️ Gagal membaca pertanyaan acak untuk topik {topic}: {e}")
-        exit(1)
+        sys.exit(1)
 
-# Fungsi untuk mengirim pertanyaan ke agent AI dengan retry
-def send_question_to_agent(agent_id, question, retries=3):
+# Fungsi untuk mengirim pertanyaan ke agent AI dengan retry dan rate limit handling
+def send_question_to_agent(agent_id, question, retries=MAX_RETRIES):
     url = f"https://{agent_id.lower().replace('_', '-')}.stag-vxzy.zettablock.com/main"
     payload = {"message": question, "stream": False}
     headers = {"Content-Type": "application/json"}
-    attempt = 0
-    while attempt < retries:
+
+    for attempt in range(retries):
         try:
-            response = requests.post(url, json=payload, headers=headers, timeout=20)
-            response.raise_for_status()
+            response = requests.post(url, json=payload, headers=headers, timeout=TIMEOUT)
+            response.raise_for_status()  # Raise HTTPError for bad responses (4xx or 5xx)
             data = response.json()
+
             if "choices" in data and len(data["choices"]) > 0:
                 return data["choices"][0].get("message", None)
             else:
                 print(Fore.RED + f"⚠️ Format respons tidak sesuai dari agent {agent_id}: {data}")
                 return None
+
+        except requests.exceptions.HTTPError as http_err:
+            status = http_err.response.status_code if http_err.response else None
+            if status == 429:  # Rate limit
+                delay = RATE_LIMIT_DELAY ** (attempt + 1)
+                print(Fore.YELLOW + f"⏳ Rate limit terdeteksi, retrying dalam {delay} detik... ({attempt + 1}/{retries})")
+                time.sleep(delay)
+            else:
+                print(Fore.RED + f"⚠️ HTTP error saat mengirim pertanyaan ke agent {agent_id}: {http_err}")
+                return None
+
         except requests.exceptions.Timeout as te:
-            attempt += 1
             print(Fore.RED + f"⚠️ Timeout saat mengirim pertanyaan ke agent {agent_id}: {te}")
-            if attempt < retries:
-                print(Fore.YELLOW + f"Retrying... ({attempt}/{retries})")
+            if attempt < retries - 1:
+                print(Fore.YELLOW + f"Retrying... ({attempt + 1}/{retries})")
                 time.sleep(5)
             else:
-                return None
-        except Exception as e:
-            print(Fore.RED + f"⚠️ Error saat mengirim pertanyaan ke agent {agent_id}: {e}")
+                return None  # Give up after max retries
+
+        except requests.exceptions.RequestException as re: #Catch broad exceptions
+            print(Fore.RED + f"⚠️ Request error saat mengirim pertanyaan ke agent {agent_id}: {re}")
             return None
 
-# Fungsi untuk melaporkan penggunaan dengan retry
-def report_usage(wallet, options, retries=3):
+        except json.JSONDecodeError as json_err: #Handle JSON decoding errors
+             print(Fore.RED + f"⚠️ JSON Decode error saat memproses response dari agent {agent_id}: {json_err}")
+             return None
+
+        except Exception as e:
+            print(Fore.RED + f"⚠️ Error tak terduga saat mengirim pertanyaan ke agent {agent_id}: {e}")
+            return None
+
+    print(Fore.RED + f"⚠️ Gagal mengirim pertanyaan ke agent {agent_id} setelah {retries} percobaan.")
+    return None
+
+# Fungsi untuk melaporkan penggunaan dengan retry dan rate limit handling
+def report_usage(wallet, options, retries=MAX_RETRIES):
     url = "https://quests-usage-dev.prod.zettablock.com/api/report_usage"
     payload = {
         "wallet_address": wallet,
@@ -122,56 +155,77 @@ def report_usage(wallet, options, retries=3):
         "request_metadata": {}
     }
     headers = {"Content-Type": "application/json"}
-    attempt = 0
-    while attempt < retries:
+
+    for attempt in range(retries):
         try:
             response = requests.post(url, json=payload, headers=headers, timeout=10)
             response.raise_for_status()
             print(Fore.YELLOW + f"✅ Data penggunaan untuk {wallet} berhasil dilaporkan!\n")
             return
+
         except requests.exceptions.HTTPError as http_err:
             status = http_err.response.status_code if http_err.response else None
             if status == 429:
-                attempt += 1
-                delay = 2 ** attempt
-                print(Fore.YELLOW + f"⏳ Rate limit terdeteksi, retrying dalam {delay} detik... ({attempt}/{retries})")
+                delay = RATE_LIMIT_DELAY ** (attempt + 1)
+                print(Fore.YELLOW + f"⏳ Rate limit terdeteksi, retrying dalam {delay} detik... ({attempt + 1}/{retries})")
                 time.sleep(delay)
             else:
                 print(Fore.RED + f"⚠️ Gagal melaporkan penggunaan untuk {wallet}: {http_err}\n")
                 return
+
+        except requests.exceptions.RequestException as re:  # catch broad exception
+            print(Fore.RED + f"⚠️ Request error saat melaporkan penggunaan untuk {wallet}: {re}")
+            return
+
         except Exception as e:
             print(Fore.RED + f"⚠️ Gagal melaporkan penggunaan untuk {wallet}: {e}\n")
             return
 
+    print(Fore.RED + f"⚠️ Gagal melaporkan penggunaan untuk {wallet} setelah {retries} percobaan.")
+
 # Fungsi yang memproses interaksi untuk satu agent secara concurrent
 def process_agent_interactions(agent_id, agent_info, wallet, questions, interaction_log):
     agent_name = agent_info["name"]
-    print(Fore.CYAN + f"\n🤖 Menggunakan Agent: {agent_name} (concurrent)")
+    print(Fore.CYAN + f"\n🤖 Memproses Agent: {agent_name} (concurrent)")
+
     # Periksa batas interaksi harian
     if interaction_log[wallet]["interactions"][agent_id] >= DEFAULT_DAILY_LIMIT:
         print(Fore.YELLOW + f"⚠️ Batas interaksi harian untuk {agent_name} sudah tercapai ({DEFAULT_DAILY_LIMIT}x).")
         return
+
     remaining_interactions = DEFAULT_DAILY_LIMIT - interaction_log[wallet]["interactions"][agent_id]
+    
     for _ in range(remaining_interactions):
         if not questions:
             print(Fore.YELLOW + f"⚠️ Tidak ada pertanyaan tersisa untuk topik {agent_info['topic']}.")
             break
+        
         question = questions.pop()
         print(Fore.YELLOW + f"❓ Pertanyaan untuk {agent_name}: {question}")
+        
         response = send_question_to_agent(agent_id, question)
+        
+        if response is None:
+            print(Fore.RED + f"⚠️ Tidak menerima respons dari {agent_name} untuk pertanyaan: {question}")
+            continue  # Skip melaporkan penggunaan jika tidak ada respons
+            
         response_text = response if response else "Tidak ada jawaban"
         if isinstance(response_text, dict):
             response_text = response_text.get("content", "Tidak ada jawaban")
+        
         print(Fore.GREEN + f"💡 Jawaban dari {agent_name}: {response_text}")
+        
         report_usage(wallet.lower(), {
             "agent_id": agent_id,
             "question": question,
             "response": response_text
         })
+        
         with log_lock:
             interaction_log[wallet]["interactions"][agent_id] += 1
             save_interaction_log(interaction_log)
-        time.sleep(random.randint(5, 10))
+        
+        time.sleep(random.randint(*SLEEP_RANGE)) # Use SLEEP_RANGE tuple
 
 # Fungsi utama
 def main():
@@ -186,7 +240,7 @@ def main():
             print(Fore.GREEN + "✅ File random_questions.json berhasil dibuat.")
         except Exception as e:
             print(Fore.RED + f"⚠️ Gagal menjalankan rand.py: {e}")
-            exit(1)
+            sys.exit(1) #Exit sys instead of exit
     
     while True:
         wallets = read_wallets()
@@ -211,13 +265,15 @@ def main():
             with concurrent.futures.ThreadPoolExecutor(max_workers=len(agents)) as executor:
                 futures = []
                 for agent_id, agent_info in agents.items():
+                    #Create a copy of the question list for each thread to prevent race conditions
+                    question_list_copy = random_questions_by_topic_dict[agent_id].copy()
                     futures.append(
                         executor.submit(
                             process_agent_interactions,
                             agent_id,
                             agent_info,
                             wallet,
-                            random_questions_by_topic_dict[agent_id],
+                            question_list_copy,
                             interaction_log
                         )
                     )
