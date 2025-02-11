@@ -29,9 +29,9 @@ python3 -m venv kite
 source kite/bin/activate
 ```
 ### 2. Instal dependensi yang diperlukan:
-    ```
-    pip install -r requirements.txt
-    ```
+```
+pip install -r requirements.txt
+```
     
 3. Jalankan aplikasi dengan perintah berikut:
     ```bash
