@@ -19,7 +19,7 @@ nano akun.txt
 
 
 ## 1. Clone repositori ini
-   ```bash
+   ```
    git clone https://github.com/BlacMagister/kitee
    cd kitee
    ```
