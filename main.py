@@ -203,7 +203,8 @@ if __name__ == "__main__":
     if not os.path.exists(random_questions_file):
         print(f"{BLUE}🔍 File {random_questions_file} tidak ditemukan. Menjalankan rand.py untuk membuat file...")
         try:
-            subprocess.run(["python", "rand.py"], check=True)
+            # Menggunakan "python3" agar sesuai dengan environment
+            subprocess.run(["python3", "rand.py"], check=True)
         except subprocess.CalledProcessError as e:
             print(f"{RED}❌ Gagal menjalankan rand.py: {e}")
             exit(1)
@@ -212,6 +213,6 @@ if __name__ == "__main__":
             print(f"{RED}❌ File {random_questions_file} masih belum ditemukan setelah menjalankan rand.py.")
             exit(1)
     
-    # Loop utama
+    # Loop utama untuk memproses interaksi secara berkala
     while True:
         main()
