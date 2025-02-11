@@ -3,6 +3,7 @@ import os
 import random
 import time
 import requests
+import subprocess
 from datetime import datetime, timedelta, timezone
 from colorama import Fore, Style, init
 
@@ -198,5 +199,19 @@ def main():
     print()  # newline setelah countdown
 
 if __name__ == "__main__":
+    # Cek apakah file random_questions.json sudah ada.
+    if not os.path.exists(random_questions_file):
+        print(f"{BLUE}🔍 File {random_questions_file} tidak ditemukan. Menjalankan rand.py untuk membuat file...")
+        try:
+            subprocess.run(["python", "rand.py"], check=True)
+        except subprocess.CalledProcessError as e:
+            print(f"{RED}❌ Gagal menjalankan rand.py: {e}")
+            exit(1)
+        # Pastikan file telah dibuat
+        if not os.path.exists(random_questions_file):
+            print(f"{RED}❌ File {random_questions_file} masih belum ditemukan setelah menjalankan rand.py.")
+            exit(1)
+    
+    # Loop utama
     while True:
         main()
