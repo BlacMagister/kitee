@@ -19,9 +19,9 @@ WHITE  = Fore.RESET
 
 # Konfigurasi agents
 agents = {
-    "deployment_r89ftdnxa7jwwhyr97wq9lkg": {"name": "Professor 🧠", "topic": "ai"},
-    "deployment_fsegykivcls3m9nrpe9zguy9": {"name": "Crypto Buddy 💰", "topic": "crypto"},
-    "deployment_xkerjnnbdtazr9e15x3y7fi8": {"name": "Sherlock 🔎", "topic": "fraud_detection"}
+    "deployment_JtmpnULoMfudGPRhHjTWQlS7": {"name": "Professor 🧠", "topic": "ai"},
+    "deployment_fseGykIvCLs3m9Nrpe9Zguy9": {"name": "Crypto Buddy 💰", "topic": "crypto"},
+    "deployment_MK9ej2jNz2rFuzuWZjdb1UmR": {"name": "Sherlock 🔎", "topic": "fraud_detection"}
 }
 
 # Nama file yang digunakan
